@@ -1,29 +1,30 @@
 # skmer_smk2
 
-`skmer_smk2` is a packaged Snakemake workflow for paired-end FASTQ processing, optional plastid-genome read removal, base-aware subsampling, and phylogenetic tree inference with Skmer, WASTER, and Mash.
+`skmer_smk2` packages a Snakemake workflow for paired-end FASTQ processing, optional plastid-genome read removal, base-aware subsampling, and tree inference with Skmer, WASTER, and Mash.
 
-The project is packaged as a Python command-line tool. Local runs and HPC runs use the same workflow and the same command; an HPC scheduler script is only an optional submission wrapper.
+Local runs and HPC runs use the same command:
+
+```bash
+skmer-smk2 run -i FASTQ_DIR -ref REF_FASTA -s 75 -j 48
+```
+
+HPC is not a separate workflow. The scheduler only launches this same command on a compute node.
 
 Demo reference and FASTQ files are copied from [`fandunjin/skmer_smk`](https://github.com/fandunjin/skmer_smk).
 
-## What The Workflow Does
-
-1. Detect paired FASTQ files named `_1/_2`, `_R1/_R2`, or `.R1/.R2`.
-2. Run `fastp`.
-3. Optionally remove plastid reads with `bowtie2` when `-ref` is provided.
-4. Repair read pairs with `repair.sh`.
-5. Merge reads with `bbmerge.sh`.
-6. Summarize reads, bases, and average length before and after final subsampling.
-7. Choose a base-count cutoff from the sorted sample-depth percentile.
-8. Generate Skmer direct, bootstrap, and merged trees.
-9. Generate a WASTER tree.
-10. Generate Mash direct, bootstrap, merged trees, and a distance heatmap.
-
 ## Install
 
-From the repository root:
+Install from GitHub:
 
 ```bash
+python -m pip install git+https://github.com/fandunjin/skmer_smk2.git
+```
+
+Or install from a local clone:
+
+```bash
+git clone https://github.com/fandunjin/skmer_smk2.git
+cd skmer_smk2
 python -m pip install .
 ```
 
@@ -33,33 +34,41 @@ For editable development:
 python -m pip install -e .
 ```
 
-The Python package installs the `skmer-smk2` command and bundles the Snakefile plus workflow helper scripts. It does not vendor large bioinformatics executables.
+The Python package installs the `skmer-smk2` command and bundles the Snakefile plus workflow helper scripts. Large bioinformatics executables are checked separately by `doctor`.
 
-## Required External Tools
+## Check Environment
 
-Make sure these tools are available in the active environment:
+Check the active environment:
 
-```text
-snakemake
-python
-fastp
-bowtie2
-repair.sh
-bbmerge.sh
-skmer
-fastme
-raxmlHPC
-waster
-mash
-seqkit
-gzip
+```bash
+skmer-smk2 doctor
 ```
 
-On HPC systems, install or load these with conda/modules, then run the same `skmer-smk2` command.
+Show help:
 
-## Input Data
+```bash
+skmer-smk2 -h
+skmer-smk2 run -h
+skmer-smk2 doctor -h
+```
 
-Put paired FASTQ files in one directory:
+`doctor` checks:
+
+```text
+snakemake python fastp bowtie2 repair.sh bbmerge.sh skmer fastme raxmlHPC waster mash seqkit gzip
+```
+
+Install missing conda-available packages into the current environment:
+
+```bash
+skmer-smk2 doctor --install
+```
+
+`doctor --install` prefers `mamba` and falls back to `conda`. It uses `conda-forge` and `bioconda`, prints the packages before installing, and marks tools that need manual installation.
+
+## Run
+
+FASTQ files can be named with `_1/_2`, `_R1/_R2`, or `.R1/.R2`:
 
 ```text
 SampleA_1.fq.gz
@@ -70,29 +79,13 @@ SampleC.R1.fq.gz
 SampleC.R2.fq.gz
 ```
 
-For plastid removal, provide a FASTA reference:
-
-```text
-ref/refDNA.fasta
-```
-
-Bundled demo data:
-
-```text
-raw_data/ref.fna
-raw_data/raw_data/sample*.R1.fq.gz
-raw_data/raw_data/sample*.R2.fq.gz
-```
-
-## Run
-
-Without plastid filtering:
+Run without plastid filtering:
 
 ```bash
 skmer-smk2 run -i /path/to/fastq_dir -s 75 -j 48
 ```
 
-With plastid filtering:
+Run with plastid filtering:
 
 ```bash
 skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/refDNA.fasta -s 75 -j 48
@@ -101,56 +94,26 @@ skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/refDNA.fasta -s 75 -j 48
 Demo dry-run:
 
 ```bash
-skmer-smk2 run -i raw_data/raw_data -ref raw_data/ref.fna -s 75 -j 4 -b 2 --dry-run
+skmer-smk2 run -i raw_data/raw_data -ref raw_data/ref.fna -s 75 -j 1 -b 2 --dry-run
 ```
 
 The value of `-s` is the sorted sample-depth percentile used to choose the base-count cutoff. For example, `-s 75` sorts samples by total bases from large to small, takes the base count at the 75% position, and uses that value for final FASTQ truncation.
 
-## Optional Templates
+## HPC Example
 
-Write optional helper templates:
-
-```bash
-skmer-smk2 init -o run_templates
-```
-
-This writes:
-
-```text
-run_templates/jsub_submit.sh
-run_templates/scan_repair_fastq.sh
-```
-
-To also export the packaged Snakefile and helper scripts:
+Write the scheduler headers required by your cluster, activate the environment, then run the same command:
 
 ```bash
-skmer-smk2 init -o run_templates --with-workflow
+#!/bin/bash
+# scheduler headers written by user
+
+source /path/to/conda.sh
+conda activate your_env
+
+skmer-smk2 run -i /path/to/fq -ref /path/to/ref.fa -s 75 -j 48
 ```
 
-## HPC Usage
-
-HPC uses the same packaged workflow. The only difference is that the scheduler submits a wrapper script.
-
-Example using the bundled JSUB template:
-
-```bash
-skmer-smk2 init -o run_templates
-
-export WORKDIR=/path/to/workdir
-export INPUT_DIR=/path/to/fastq_dir
-export REF=/path/to/refDNA.fasta
-export CONDA_PROFILE=/path/to/conda/etc/profile.d/conda.sh
-export CONDA_ENV=your_bioinfo_env
-export THREADS=48
-export SAMPLE_PERCENTILE=75
-export BOOTSTRAPS=100
-export EXCLUDE_SAMPLES=""
-
-cd "${WORKDIR}"
-jsub < /path/to/run_templates/jsub_submit.sh
-```
-
-For schedulers other than JSUB, adapt only the scheduler header and submission command. The inner workflow command should remain `skmer-smk2 run`.
+Submit the script with your cluster command, for example `jsub < skmer.sh`, `sbatch skmer.sh`, or `qsub skmer.sh`.
 
 ## FASTQ Scan And Repair
 
@@ -160,7 +123,7 @@ Copy the repair helper:
 skmer-smk2 repair-fastq --workdir . --copy-only
 ```
 
-Or run it directly if `bash` and `seqkit` are available:
+Run it directly if `bash` and `seqkit` are available:
 
 ```bash
 skmer-smk2 repair-fastq -i /path/to/fastq_dir --workdir .
@@ -198,6 +161,23 @@ results/mash/tree.bootstrap.tre
 results/mash/tree.merged.tre
 results/mash/distance_heatmap.svg
 ```
+
+## Optional Helpers
+
+Write optional helper scripts:
+
+```bash
+skmer-smk2 init -o run_templates
+```
+
+This writes:
+
+```text
+run_templates/jsub_submit.sh
+run_templates/scan_repair_fastq.sh
+```
+
+These helpers are examples only. The main interface remains `skmer-smk2 run ...`.
 
 ## Repository Layout
 

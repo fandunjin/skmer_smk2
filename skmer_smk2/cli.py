@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -10,6 +11,38 @@ from pathlib import Path
 
 PACKAGE = "skmer_smk2"
 WORKFLOW_CACHE = ".skmer_smk2_workflow"
+REQUIRED_TOOLS = [
+    "snakemake",
+    "python",
+    "fastp",
+    "bowtie2",
+    "repair.sh",
+    "bbmerge.sh",
+    "skmer",
+    "fastme",
+    "raxmlHPC",
+    "waster",
+    "mash",
+    "seqkit",
+    "gzip",
+]
+CONDA_PACKAGES = {
+    "snakemake": "snakemake",
+    "fastp": "fastp",
+    "bowtie2": "bowtie2",
+    "repair.sh": "bbmap",
+    "bbmerge.sh": "bbmap",
+    "fastme": "fastme",
+    "raxmlHPC": "raxml",
+    "mash": "mash",
+    "seqkit": "seqkit",
+    "gzip": "gzip",
+}
+CORE_TOOLS = {"python"}
+MANUAL_TOOLS = {
+    "skmer": "Install Skmer from its upstream instructions or make sure the skmer executable is in PATH.",
+    "waster": "Install WASTER from its upstream instructions or make sure the waster executable is in PATH.",
+}
 
 
 def resource_path(*parts):
@@ -77,6 +110,122 @@ def run(args):
     return subprocess.call(cmd)
 
 
+def find_tool(tool):
+    if tool == "python":
+        return sys.executable
+    path = shutil.which(tool)
+    if path:
+        return path
+    if tool == "snakemake" and importlib.util.find_spec("snakemake"):
+        return "{} -m snakemake".format(sys.executable)
+    return ""
+
+
+def choose_package_manager(manager):
+    if manager == "auto":
+        return shutil.which("mamba") or shutil.which("conda")
+    return shutil.which(manager)
+
+
+def package_manager_name(path):
+    if not path:
+        return ""
+    return Path(path).name.lower().split(".")[0]
+
+
+def doctor(args):
+    found = {}
+    missing = []
+    width = max(len(tool) for tool in REQUIRED_TOOLS)
+
+    print("Checking skmer_smk2 external tools")
+    print()
+    print("{:<{width}}  {:<7}  {}".format("tool", "status", "path", width=width))
+    print("{:<{width}}  {:<7}  {}".format("-" * width, "-------", "----", width=width))
+
+    for tool in REQUIRED_TOOLS:
+        path = find_tool(tool)
+        found[tool] = path
+        if path:
+            print("{:<{width}}  {:<7}  {}".format(tool, "OK", path, width=width))
+        else:
+            print("{:<{width}}  {:<7}  {}".format(tool, "MISSING", "-", width=width))
+            missing.append(tool)
+
+    print()
+    if not missing:
+        print("All checked tools were found.")
+        return 0
+
+    installable_packages = []
+    manual_tools = []
+    for tool in missing:
+        if tool in CORE_TOOLS:
+            continue
+        package = CONDA_PACKAGES.get(tool)
+        if package:
+            installable_packages.append(package)
+        else:
+            manual_tools.append(tool)
+
+    installable_packages = sorted(set(installable_packages))
+
+    if installable_packages:
+        manager_path = choose_package_manager(args.manager)
+        manager = package_manager_name(manager_path) or ("mamba" if args.manager == "mamba" else "conda")
+        suggestion = [manager, "install", "-c", "conda-forge", "-c", "bioconda"] + installable_packages
+        print("Conda-installable missing packages:")
+        print("  {}".format(" ".join(installable_packages)))
+        print()
+        print("Suggested command for the current environment:")
+        print("  {}".format(" ".join(suggestion)))
+        print()
+    else:
+        manager_path = ""
+
+    if manual_tools:
+        print("Manual installation needed:")
+        for tool in manual_tools:
+            print("  {}: {}".format(tool, MANUAL_TOOLS.get(tool, "Install manually and add it to PATH.")))
+        print()
+
+    if not args.install:
+        print("Run `skmer-smk2 doctor --install` to install the conda-available missing packages into the active environment.")
+        return 1
+
+    if not installable_packages:
+        print("No missing tools can be installed automatically by conda/mamba.")
+        return 1 if manual_tools else 0
+
+    manager_path = choose_package_manager(args.manager)
+    if not manager_path:
+        print("ERROR: neither mamba nor conda was found in PATH.", file=sys.stderr)
+        return 2
+
+    install_cmd = [
+        manager_path,
+        "install",
+        "-y",
+        "-c",
+        "conda-forge",
+        "-c",
+        "bioconda",
+    ] + installable_packages
+    print("Installing into the currently active environment:")
+    print("  {}".format(" ".join(install_cmd)))
+    print()
+    rc = subprocess.call(install_cmd)
+    if rc != 0:
+        return rc
+    if manual_tools:
+        print()
+        print("Automatic install finished, but these tools still need manual installation:")
+        for tool in manual_tools:
+            print("  {}".format(tool))
+        return 1
+    return 0
+
+
 def init(args):
     outdir = Path(args.output).resolve()
     outdir.mkdir(parents=True, exist_ok=True)
@@ -100,10 +249,17 @@ def repair_fastq(args):
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(prog="skmer-smk2", description="Packaged Skmer/WASTER/Mash Snakemake workflow.")
+    parser = argparse.ArgumentParser(
+        prog="skmer-smk2",
+        description="Packaged Skmer/WASTER/Mash Snakemake workflow.",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p_run = sub.add_parser("run", help="Run the workflow with local Snakemake.")
+    p_run = sub.add_parser(
+        "run",
+        help="Run the workflow.",
+        description="Run the packaged workflow. The same command works locally and inside an HPC scheduler script.",
+    )
     p_run.add_argument("-i", "--input", required=True, help="Directory containing paired FASTQ files.")
     p_run.add_argument("-ref", "--ref", default="", help="Optional plastid/reference genome FASTA for bowtie2 filtering.")
     p_run.add_argument("-s", "--sample-percentile", type=float, default=75.0, help="Sorted sample base-count percentile used as the head cutoff.")
@@ -116,6 +272,15 @@ def build_parser():
     p_run.add_argument("--printshellcmds", action="store_true", help="Print shell commands from Snakemake.")
     p_run.add_argument("snakemake_args", nargs=argparse.REMAINDER, help="Extra arguments passed to snakemake after --.")
     p_run.set_defaults(func=run)
+
+    p_doctor = sub.add_parser(
+        "doctor",
+        help="Check required external tools and optionally install conda packages.",
+        description="Check external tools used by the workflow and print install advice.",
+    )
+    p_doctor.add_argument("--install", action="store_true", help="Install missing conda-available packages into the active environment.")
+    p_doctor.add_argument("--manager", choices=("auto", "mamba", "conda"), default="auto", help="Package manager for --install. Default: auto.")
+    p_doctor.set_defaults(func=doctor)
 
     p_init = sub.add_parser("init", help="Write optional helper templates into a directory.")
     p_init.add_argument("-o", "--output", default="skmer_smk2_templates")
