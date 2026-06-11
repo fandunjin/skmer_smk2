@@ -34,9 +34,7 @@ For editable development:
 python -m pip install -e .
 ```
 
-The Python package installs the `skmer-smk2` command and bundles the Snakefile plus workflow helper scripts. Large bioinformatics executables are checked separately by `doctor`.
-
-Python 3.9 and 3.10 install Snakemake 7.x automatically. Python 3.11 or newer installs Snakemake 8+.
+The Python package installs the `skmer-smk2` command and bundles the Snakefile plus workflow helper scripts. It does not force-install Snakemake or other large bioinformatics executables, so it can be installed into existing HPC environments without changing their software stack.
 
 ## Check Environment
 
@@ -44,6 +42,12 @@ Check the active environment:
 
 ```bash
 skmer-smk2 doctor
+```
+
+`doctor` is advisory by default: it prints OK/WARN rows but does not fail just because a tool was not found by the current shell. This is useful on HPC systems where modules or job scripts may initialize PATH differently. Use strict mode only when you want missing tools to return a non-zero exit code:
+
+```bash
+skmer-smk2 doctor --strict
 ```
 
 Show help:
@@ -66,7 +70,7 @@ Install missing conda-available packages into the current environment:
 skmer-smk2 doctor --install
 ```
 
-`doctor --install` prefers `mamba` and falls back to `conda`. It uses `conda-forge` and `bioconda`, prints the packages before installing, and marks tools that need manual installation.
+`doctor --install` prefers `mamba` and falls back to `conda`. It uses `conda-forge` and `bioconda`, prints the packages before installing, and marks tools that need manual installation. Existing environments that already contain the required tools can skip this step.
 
 ## Run
 

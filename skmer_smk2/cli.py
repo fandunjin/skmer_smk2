@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import glob
 import importlib.util
 import os
 import shutil
@@ -16,6 +17,7 @@ REQUIRED_TOOLS = [
     "python",
     "fastp",
     "bowtie2",
+    "bowtie2-build",
     "repair.sh",
     "bbmerge.sh",
     "skmer",
@@ -26,10 +28,47 @@ REQUIRED_TOOLS = [
     "seqkit",
     "gzip",
 ]
+TOOL_CANDIDATES = {
+    "snakemake": ("snakemake",),
+    "fastp": ("fastp",),
+    "bowtie2": ("bowtie2",),
+    "bowtie2-build": ("bowtie2-build",),
+    "repair.sh": ("repair.sh", "repair"),
+    "bbmerge.sh": ("bbmerge.sh", "bbmerge"),
+    "skmer": ("skmer",),
+    "fastme": ("fastme", "FastME"),
+    "raxmlHPC": (
+        "raxmlHPC",
+        "raxmlHPC-PTHREADS",
+        "raxmlHPC-PTHREADS-SSE3",
+        "raxmlHPC-PTHREADS-AVX",
+        "raxmlHPC-SSE3",
+        "raxmlHPC-AVX",
+        "raxml",
+    ),
+    "waster": ("waster",),
+    "mash": ("mash",),
+    "seqkit": ("seqkit",),
+    "gzip": ("gzip",),
+}
+WORKFLOW_TOOL_CONFIG = {
+    "python": "tool_python",
+    "fastp": "tool_fastp",
+    "bowtie2": "tool_bowtie2",
+    "bowtie2-build": "tool_bowtie2_build",
+    "repair.sh": "tool_repair",
+    "bbmerge.sh": "tool_bbmerge",
+    "skmer": "tool_skmer",
+    "fastme": "tool_fastme",
+    "raxmlHPC": "tool_raxml",
+    "waster": "tool_waster",
+    "mash": "tool_mash",
+}
 CONDA_PACKAGES = {
     "snakemake": "snakemake",
     "fastp": "fastp",
     "bowtie2": "bowtie2",
+    "bowtie2-build": "bowtie2",
     "repair.sh": "bbmap",
     "bbmerge.sh": "bbmap",
     "fastme": "fastme",
@@ -64,12 +103,62 @@ def materialize_workflow(workdir):
     return target / "Snakefile"
 
 
-def run(args):
+def conda_prefixes():
+    prefixes = []
+    for value in (os.environ.get("CONDA_PREFIX"), sys.prefix):
+        if value:
+            path = Path(value)
+            if path not in prefixes:
+                prefixes.append(path)
+    return prefixes
+
+
+def find_in_conda_prefixes(tool):
+    for prefix in conda_prefixes():
+        for subdir in ("bin", "Scripts"):
+            path = prefix / subdir / tool
+            if path.exists():
+                return str(path)
+        for pattern in ("share/bbmap*/{}", "opt/bbmap*/{}"):
+            matches = sorted(glob.glob(str(prefix / pattern.format(tool))))
+            if matches:
+                return matches[0]
+    return ""
+
+
+def find_tool(tool):
+    if tool == "python":
+        return sys.executable
+    for candidate in TOOL_CANDIDATES.get(tool, (tool,)):
+        path = shutil.which(candidate)
+        if path:
+            return path
+        path = find_in_conda_prefixes(candidate)
+        if path:
+            return path
+    if tool == "snakemake" and importlib.util.find_spec("snakemake"):
+        return "{} -m snakemake".format(sys.executable)
+    return ""
+
+
+def snakemake_command():
     snakemake = shutil.which("snakemake")
-    if not snakemake:
-        snakemake_cmd = [sys.executable, "-m", "snakemake"]
-    else:
-        snakemake_cmd = [snakemake]
+    if snakemake:
+        return [snakemake]
+    if importlib.util.find_spec("snakemake"):
+        return [sys.executable, "-m", "snakemake"]
+    return []
+
+
+def run(args):
+    snakemake_cmd = snakemake_command()
+    if not snakemake_cmd:
+        print(
+            "ERROR: Snakemake was not found in PATH and cannot be imported by this Python. "
+            "Activate an environment with snakemake, or run `skmer-smk2 doctor --install`.",
+            file=sys.stderr,
+        )
+        return 127
 
     workdir = Path(args.workdir).resolve()
     workdir.mkdir(parents=True, exist_ok=True)
@@ -94,6 +183,10 @@ def run(args):
         "rep_n={}".format(args.bootstraps),
         "exclude_samples={}".format(args.exclude_samples or ""),
     ]
+    for tool, config_key in WORKFLOW_TOOL_CONFIG.items():
+        path = find_tool(tool)
+        if path:
+            cmd.append("{}={}".format(config_key, path))
     if ref_path:
         cmd.append("ref={}".format(ref_path))
     if args.dry_run:
@@ -110,17 +203,6 @@ def run(args):
     return subprocess.call(cmd)
 
 
-def find_tool(tool):
-    if tool == "python":
-        return sys.executable
-    path = shutil.which(tool)
-    if path:
-        return path
-    if tool == "snakemake" and importlib.util.find_spec("snakemake"):
-        return "{} -m snakemake".format(sys.executable)
-    return ""
-
-
 def choose_package_manager(manager):
     if manager == "auto":
         return shutil.which("mamba") or shutil.which("conda")
@@ -134,22 +216,22 @@ def package_manager_name(path):
 
 
 def doctor(args):
-    found = {}
     missing = []
     width = max(len(tool) for tool in REQUIRED_TOOLS)
 
     print("Checking skmer_smk2 external tools")
+    print("Mode: {}".format("strict" if args.strict else "advisory"))
     print()
-    print("{:<{width}}  {:<7}  {}".format("tool", "status", "path", width=width))
-    print("{:<{width}}  {:<7}  {}".format("-" * width, "-------", "----", width=width))
+    print("{:<{width}}  {:<7}  {}".format("tool", "status", "resolved command/path", width=width))
+    print("{:<{width}}  {:<7}  {}".format("-" * width, "-------", "---------------------", width=width))
 
     for tool in REQUIRED_TOOLS:
         path = find_tool(tool)
-        found[tool] = path
         if path:
             print("{:<{width}}  {:<7}  {}".format(tool, "OK", path, width=width))
         else:
-            print("{:<{width}}  {:<7}  {}".format(tool, "MISSING", "-", width=width))
+            aliases = ", ".join(TOOL_CANDIDATES.get(tool, (tool,)))
+            print("{:<{width}}  {:<7}  {} aliases: {}".format(tool, "WARN", "-", aliases, width=width))
             missing.append(tool)
 
     print()
@@ -190,12 +272,17 @@ def doctor(args):
         print()
 
     if not args.install:
+        if args.strict:
+            print("Strict check failed because one or more tools were not resolved from the current shell.")
+        else:
+            print("This is an advisory check. Missing entries may still work if your scheduler or shell initializes PATH differently.")
+            print("Run `skmer-smk2 doctor --strict` when you want missing entries to return a non-zero exit code.")
         print("Run `skmer-smk2 doctor --install` to install the conda-available missing packages into the active environment.")
-        return 1
+        return 1 if args.strict else 0
 
     if not installable_packages:
         print("No missing tools can be installed automatically by conda/mamba.")
-        return 1 if manual_tools else 0
+        return 1 if args.strict and manual_tools else 0
 
     manager_path = choose_package_manager(args.manager)
     if not manager_path:
@@ -222,7 +309,7 @@ def doctor(args):
         print("Automatic install finished, but these tools still need manual installation:")
         for tool in manual_tools:
             print("  {}".format(tool))
-        return 1
+        return 1 if args.strict else 0
     return 0
 
 
@@ -280,6 +367,7 @@ def build_parser():
     )
     p_doctor.add_argument("--install", action="store_true", help="Install missing conda-available packages into the active environment.")
     p_doctor.add_argument("--manager", choices=("auto", "mamba", "conda"), default="auto", help="Package manager for --install. Default: auto.")
+    p_doctor.add_argument("--strict", action="store_true", help="Return a non-zero exit code when tools are missing.")
     p_doctor.set_defaults(func=doctor)
 
     p_init = sub.add_parser("init", help="Write optional helper templates into a directory.")

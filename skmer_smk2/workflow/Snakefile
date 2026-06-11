@@ -54,6 +54,17 @@ PAIRS = discover_samples()
 SAMPLES = list(PAIRS)
 USE_REF = bool(ref_path)
 SAMPLE_ARGS = " ".join(shlex.quote(sample) for sample in SAMPLES)
+TOOL_PYTHON = shlex.quote(str(config.get("tool_python", "python")))
+TOOL_FASTP = shlex.quote(str(config.get("tool_fastp", "fastp")))
+TOOL_BOWTIE2 = shlex.quote(str(config.get("tool_bowtie2", "bowtie2")))
+TOOL_BOWTIE2_BUILD = shlex.quote(str(config.get("tool_bowtie2_build", "bowtie2-build")))
+TOOL_REPAIR = shlex.quote(str(config.get("tool_repair", "repair.sh")))
+TOOL_BBMERGE = shlex.quote(str(config.get("tool_bbmerge", "bbmerge.sh")))
+TOOL_SKMER = shlex.quote(str(config.get("tool_skmer", "skmer")))
+TOOL_FASTME = shlex.quote(str(config.get("tool_fastme", "fastme")))
+TOOL_RAXML = shlex.quote(str(config.get("tool_raxml", "raxmlHPC")))
+TOOL_WASTER = shlex.quote(str(config.get("tool_waster", "waster")))
+TOOL_MASH = shlex.quote(str(config.get("tool_mash", "mash")))
 
 if not SAMPLES:
     raise ValueError(
@@ -113,7 +124,7 @@ rule fastp:
     shell:
         """
         mkdir -p results/{wildcards.sample}/clean
-        fastp -i {input.r1} -I {input.r2} \
+        {TOOL_FASTP} -i {input.r1} -I {input.r2} \
               -o {output.r1} -O {output.r2} \
               -l 100 \
               -q 20 -u 5 \
@@ -132,7 +143,7 @@ rule bowtie2_build:
     params:
         prefix="results/ref/refDNA"
     shell:
-        "mkdir -p results/ref && bowtie2-build {input.ref} {params.prefix}"
+        "mkdir -p results/ref && {TOOL_BOWTIE2_BUILD} {input.ref} {params.prefix}"
 
 
 rule bowtie2_filter:
@@ -148,7 +159,7 @@ rule bowtie2_filter:
     shell:
         """
         mkdir -p results/{wildcards.sample}/nDNA
-        bowtie2 -x results/ref/refDNA \
+        {TOOL_BOWTIE2} -x results/ref/refDNA \
                 -1 {input.r1} -2 {input.r2} \
                 --un-conc-gz results/{wildcards.sample}/nDNA/un-conc-mate.%.fq.gz \
                 -S {output.sam} -p {threads}
@@ -166,7 +177,7 @@ rule repair_pairs:
     threads: 4
     shell:
         """
-        repair.sh in1={input.r1} in2={input.r2} \
+        {TOOL_REPAIR} in1={input.r1} in2={input.r2} \
                   out1={output.r1} out2={output.r2} outs={output.single} \
                   -Xmx4g threads={threads}
         """
@@ -182,7 +193,7 @@ rule bbmerge:
         unmerged2="results/{sample}/sample_unmerged2.fq"
     threads: 4
     shell:
-        "mkdir -p results/{wildcards.sample} && bbmerge.sh t={threads} in1={input.r1} in2={input.r2} out={output.merged} outu1={output.unmerged1} outu2={output.unmerged2}"
+        "mkdir -p results/{wildcards.sample} && {TOOL_BBMERGE} t={threads} in1={input.r1} in2={input.r2} out={output.merged} outu1={output.unmerged1} outu2={output.unmerged2}"
 
 
 rule concatenate_reads:
@@ -202,7 +213,7 @@ rule post_filter_stats:
     output:
         "results/{sample}/stats/{sample}.post_filter.tsv"
     shell:
-        "python scripts/fastq_stats_and_sample.py stats --sample {wildcards.sample} --input {input} --output {output}"
+        "{TOOL_PYTHON} scripts/fastq_stats_and_sample.py stats --sample {wildcards.sample} --input {input} --output {output}"
 
 
 rule post_filter_summary:
@@ -214,7 +225,7 @@ rule post_filter_summary:
     params:
         percentile=sample_percentile
     shell:
-        "python scripts/summarize_fastq_stats.py --percentile {params.percentile} --summary {output.summary} --cutoff {output.cutoff} {input}"
+        "{TOOL_PYTHON} scripts/summarize_fastq_stats.py --percentile {params.percentile} --summary {output.summary} --cutoff {output.cutoff} {input}"
 
 
 rule head_by_bases:
@@ -226,7 +237,7 @@ rule head_by_bases:
         stats="results/{sample}/stats/{sample}.head.tsv"
     shell:
         """
-        python scripts/fastq_stats_and_sample.py sample \
+        {TOOL_PYTHON} scripts/fastq_stats_and_sample.py sample \
             --sample {wildcards.sample} \
             --input {input.fq} \
             --cutoff {input.cutoff} \
@@ -241,7 +252,7 @@ rule head_summary:
     output:
         "results/stats/head_summary.sorted.tsv"
     shell:
-        "python scripts/summarize_fastq_stats.py --summary {output} {input}"
+        "{TOOL_PYTHON} scripts/summarize_fastq_stats.py --summary {output} {input}"
 
 
 rule prepare_skmer_input_dir:
@@ -273,7 +284,7 @@ rule skmer_reference:
         prefix="results/skmer/dimtrx_main.txt"
     threads: 16
     shell:
-        "mkdir -p results/skmer && skmer reference {input.skmer_dir} -s 100000 -S 42 -p {threads} -t -o {params.prefix}"
+        "mkdir -p results/skmer && {TOOL_SKMER} reference {input.skmer_dir} -s 100000 -S 42 -p {threads} -t -o {params.prefix}"
 
 
 rule skmer_rename_main:
@@ -295,7 +306,7 @@ rule skmer_subsample:
         reps=rep_n
     shell:
         """
-        skmer subsample {input.skmer_dir} \
+        {TOOL_SKMER} subsample {input.skmer_dir} \
             -sub results/skmer/subsample \
             -b {params.reps} -i 0 \
             -s 100000 -S 42 -t
@@ -309,7 +320,7 @@ rule skmer_correct:
     output:
         "results/skmer/dimtrx_main_cor_.txt"
     shell:
-        "skmer correct -main {input.main} -sub results/skmer/subsample"
+        "{TOOL_SKMER} correct -main {input.main} -sub results/skmer/subsample"
 
 
 rule skmer_main_to_phylip:
@@ -320,7 +331,7 @@ rule skmer_main_to_phylip:
     params:
         samples=SAMPLE_ARGS
     shell:
-        "python scripts/distance_to_phylip.py --input {input} --output {output} --samples {params.samples}"
+        "{TOOL_PYTHON} scripts/distance_to_phylip.py --input {input} --output {output} --samples {params.samples}"
 
 
 rule skmer_fastme_direct:
@@ -329,7 +340,7 @@ rule skmer_fastme_direct:
     output:
         "results/skmer/tree.direct.tre"
     shell:
-        "fastme -i {input} -o {output}"
+        "{TOOL_FASTME} -i {input} -o {output}"
 
 
 rule skmer_rep_to_phylip:
@@ -341,7 +352,7 @@ rule skmer_rep_to_phylip:
     params:
         samples=SAMPLE_ARGS
     shell:
-        "python scripts/distance_to_phylip.py --input {input.txt} --output {output} --samples {params.samples}"
+        "{TOOL_PYTHON} scripts/distance_to_phylip.py --input {input.txt} --output {output} --samples {params.samples}"
 
 
 rule skmer_fastme_rep:
@@ -350,7 +361,7 @@ rule skmer_fastme_rep:
     output:
         "results/skmer/subsample/rep{idx}/tree.tre"
     shell:
-        "fastme -i {input} -o {output}"
+        "{TOOL_FASTME} -i {input} -o {output}"
 
 
 rule skmer_concat_bootstrap_trees:
@@ -371,7 +382,7 @@ rule skmer_bootstrap_consensus:
         outdir=os.path.abspath("results/skmer")
     shell:
         """
-        raxmlHPC -J MRE -z {input} -p 4424 -m GTRCAT -n skmer_bootstrap -w {params.outdir}
+        {TOOL_RAXML} -J MRE -z {input} -p 4424 -m GTRCAT -n skmer_bootstrap -w {params.outdir}
         mv results/skmer/RAxML_MajorityRuleExtendedConsensusTree.skmer_bootstrap {output}
         """
 
@@ -383,7 +394,7 @@ rule skmer_merge_trees:
     output:
         "results/skmer/tree.merged.tre"
     shell:
-        "python scripts/merge_consensus.py --bootstrap {input.bootstrap} --direct {input.direct} --output {output}"
+        "{TOOL_PYTHON} scripts/merge_consensus.py --bootstrap {input.bootstrap} --direct {input.direct} --output {output}"
 
 
 rule waster_input_list:
@@ -394,7 +405,7 @@ rule waster_input_list:
     params:
         samples=SAMPLE_ARGS
     shell:
-        "python scripts/write_sample_fastq_list.py --output {output} --samples {params.samples} --fastqs {input:q}"
+        "{TOOL_PYTHON} scripts/write_sample_fastq_list.py --output {output} --samples {params.samples} --fastqs {input:q}"
 
 
 rule waster_tree:
@@ -404,7 +415,7 @@ rule waster_tree:
         "results/waster/waster.tree"
     threads: 16
     shell:
-        "mkdir -p results/waster && waster -C -t {threads} -i {input} -o {output}"
+        "mkdir -p results/waster && {TOOL_WASTER} -C -t {threads} -i {input} -o {output}"
 
 
 rule mash_sketch:
@@ -415,7 +426,7 @@ rule mash_sketch:
     params:
         prefix="results/mash/sketches/{sample}"
     shell:
-        "mkdir -p results/mash/sketches && mash sketch -r -m 2 -s 10000 -S 42 -o {params.prefix} {input}"
+        "mkdir -p results/mash/sketches && {TOOL_MASH} sketch -r -m 2 -s 10000 -S 42 -o {params.prefix} {input}"
 
 
 rule mash_paste:
@@ -426,7 +437,7 @@ rule mash_paste:
     params:
         prefix="results/mash/all"
     shell:
-        "mkdir -p results/mash && mash paste {params.prefix} {input}"
+        "mkdir -p results/mash && {TOOL_MASH} paste {params.prefix} {input}"
 
 
 rule mash_dist:
@@ -435,7 +446,7 @@ rule mash_dist:
     output:
         "results/mash/distances.tsv"
     shell:
-        "mash dist {input} {input} > {output}"
+        "{TOOL_MASH} dist {input} {input} > {output}"
 
 
 rule mash_dist_to_phylip:
@@ -446,7 +457,7 @@ rule mash_dist_to_phylip:
     params:
         samples=SAMPLE_ARGS
     shell:
-        "python scripts/mash_dist_to_phylip.py --input {input} --output {output} --samples {params.samples}"
+        "{TOOL_PYTHON} scripts/mash_dist_to_phylip.py --input {input} --output {output} --samples {params.samples}"
 
 
 rule mash_fastme_direct:
@@ -455,7 +466,7 @@ rule mash_fastme_direct:
     output:
         "results/mash/tree.direct.tre"
     shell:
-        "fastme -i {input} -o {output}"
+        "{TOOL_FASTME} -i {input} -o {output}"
 
 
 rule mash_heatmap:
@@ -466,7 +477,7 @@ rule mash_heatmap:
     params:
         samples=SAMPLE_ARGS
     shell:
-        "python scripts/plot_mash_heatmap.py --input {input} --output {output} --samples {params.samples}"
+        "{TOOL_PYTHON} scripts/plot_mash_heatmap.py --input {input} --output {output} --samples {params.samples}"
 
 
 rule mash_bootstrap_sketch:
@@ -478,7 +489,7 @@ rule mash_bootstrap_sketch:
         prefix="results/mash/bootstrap/rep{idx}/sketches/{sample}",
         seed=lambda wildcards: int(wildcards.idx) + 1
     shell:
-        "mkdir -p results/mash/bootstrap/rep{wildcards.idx}/sketches && mash sketch -r -m 2 -s 10000 -S {params.seed} -o {params.prefix} {input}"
+        "mkdir -p results/mash/bootstrap/rep{wildcards.idx}/sketches && {TOOL_MASH} sketch -r -m 2 -s 10000 -S {params.seed} -o {params.prefix} {input}"
 
 
 rule mash_bootstrap_paste:
@@ -489,7 +500,7 @@ rule mash_bootstrap_paste:
     params:
         prefix="results/mash/bootstrap/rep{idx}/all"
     shell:
-        "mkdir -p results/mash/bootstrap/rep{wildcards.idx} && mash paste {params.prefix} {input}"
+        "mkdir -p results/mash/bootstrap/rep{wildcards.idx} && {TOOL_MASH} paste {params.prefix} {input}"
 
 
 rule mash_bootstrap_dist:
@@ -498,7 +509,7 @@ rule mash_bootstrap_dist:
     output:
         "results/mash/bootstrap/rep{idx}/distances.tsv"
     shell:
-        "mash dist {input} {input} > {output}"
+        "{TOOL_MASH} dist {input} {input} > {output}"
 
 
 rule mash_bootstrap_phylip:
@@ -509,7 +520,7 @@ rule mash_bootstrap_phylip:
     params:
         samples=SAMPLE_ARGS
     shell:
-        "python scripts/mash_dist_to_phylip.py --input {input} --output {output} --samples {params.samples}"
+        "{TOOL_PYTHON} scripts/mash_dist_to_phylip.py --input {input} --output {output} --samples {params.samples}"
 
 
 rule mash_bootstrap_fastme:
@@ -518,7 +529,7 @@ rule mash_bootstrap_fastme:
     output:
         "results/mash/bootstrap/rep{idx}/tree.tre"
     shell:
-        "fastme -i {input} -o {output}"
+        "{TOOL_FASTME} -i {input} -o {output}"
 
 
 rule mash_concat_bootstrap_trees:
@@ -539,7 +550,7 @@ rule mash_bootstrap_consensus:
         outdir=os.path.abspath("results/mash")
     shell:
         """
-        raxmlHPC -J MRE -z {input} -p 4424 -m GTRCAT -n mash_bootstrap -w {params.outdir}
+        {TOOL_RAXML} -J MRE -z {input} -p 4424 -m GTRCAT -n mash_bootstrap -w {params.outdir}
         mv results/mash/RAxML_MajorityRuleExtendedConsensusTree.mash_bootstrap {output}
         """
 
@@ -551,4 +562,4 @@ rule mash_merge_trees:
     output:
         "results/mash/tree.merged.tre"
     shell:
-        "python scripts/merge_consensus.py --bootstrap {input.bootstrap} --direct {input.direct} --output {output}"
+        "{TOOL_PYTHON} scripts/merge_consensus.py --bootstrap {input.bootstrap} --direct {input.direct} --output {output}"
