@@ -113,6 +113,8 @@ Demo command:
 python run_skmer.py -i raw_data/raw_data -ref raw_data/ref.fna -s 75 -j 4 --dry-run
 ```
 
+The bundled demo data has been checked with a local Snakemake dry-run using `rep_n=2`. Full execution requires the bioinformatics tools listed above, preferably in the HPC conda environment.
+
 The value of `-s` is the sorted sample-depth percentile used to choose the base-count cutoff. For example, `-s 75` sorts samples by total bases from large to small, takes the base count at the 75% position, and uses that value for final FASTQ truncation.
 
 ## HPC Example
