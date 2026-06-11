@@ -20,6 +20,12 @@ Install from GitHub:
 python -m pip install git+https://github.com/fandunjin/skmer_smk2.git
 ```
 
+If the HPC login node has unstable GitHub HTTPS/SSL access and `git clone` fails, install from the GitHub zip archive instead. This does not call `git clone`:
+
+```bash
+python -m pip install --no-cache-dir --force-reinstall https://github.com/fandunjin/skmer_smk2/archive/refs/heads/main.zip
+```
+
 Or install from a local clone:
 
 ```bash
