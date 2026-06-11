@@ -14,5 +14,12 @@ skmer_*/
 *.bt2
 *.msh
 ref/
+!raw_data/
+!raw_data/**
+!raw_data/**/*.fq.gz
+!raw_data/**/*.fastq.gz
+!raw_data/**/*.fna
+!raw_data/**/*.fa
+!raw_data/**/*.fasta
 __pycache__/
 *.pyc

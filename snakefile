@@ -17,6 +17,7 @@ FASTQ_EXTS = (".fq.gz", ".fastq.gz", ".fq", ".fastq")
 PAIR_PATTERNS = (
     ("_1", "_2"),
     ("_R1", "_R2"),
+    (".R1", ".R2"),
 )
 
 

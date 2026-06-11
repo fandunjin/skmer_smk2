@@ -2,7 +2,7 @@
 
 Snakemake workflow for paired-end FASTQ processing, plastid genome read removal, base-aware subsampling, and phylogenetic tree inference with Skmer, WASTER, and Mash.
 
-This project is an updated workflow derived from the style and example-data layout of [`fandunjin/skmer_smk`](https://github.com/fandunjin/skmer_smk). Reference files and example running data can be taken directly from that repository, especially the `raw_data` example layout.
+This project is an updated workflow derived from the style and example-data layout of [`fandunjin/skmer_smk`](https://github.com/fandunjin/skmer_smk). The bundled `raw_data` demo reference and FASTQ files are copied from that repository.
 
 ## Workflow
 
@@ -27,6 +27,12 @@ The workflow performs:
 ├── run_skmer.py
 ├── skmer_hpc.sh
 ├── scan_repair_fastq.sh
+├── raw_data/
+│   ├── ref.fna
+│   └── raw_data/
+│       ├── sample1.R1.fq.gz
+│       ├── sample1.R2.fq.gz
+│       └── ...
 ├── scripts/
 │   ├── distance_to_phylip.py
 │   ├── fastq_stats_and_sample.py
@@ -49,6 +55,8 @@ SampleA_1.fq.gz
 SampleA_2.fq.gz
 SampleB_R1.fq.gz
 SampleB_R2.fq.gz
+SampleC.R1.fq.gz
+SampleC.R2.fq.gz
 ```
 
 For plastid removal, provide a reference FASTA:
@@ -57,7 +65,13 @@ For plastid removal, provide a reference FASTA:
 ref/refDNA.fasta
 ```
 
-Example data and reference layout can follow [`fandunjin/skmer_smk`](https://github.com/fandunjin/skmer_smk).
+Bundled demo data:
+
+```text
+raw_data/ref.fna
+raw_data/raw_data/sample*.R1.fq.gz
+raw_data/raw_data/sample*.R2.fq.gz
+```
 
 ## Dependencies
 
@@ -91,6 +105,12 @@ With plastid filtering:
 
 ```bash
 python run_skmer.py -i /path/to/fastq_dir -ref /path/to/refDNA.fasta -s 75 -j 48
+```
+
+Demo command:
+
+```bash
+python run_skmer.py -i raw_data/raw_data -ref raw_data/ref.fna -s 75 -j 4 --dry-run
 ```
 
 The value of `-s` is the sorted sample-depth percentile used to choose the base-count cutoff. For example, `-s 75` sorts samples by total bases from large to small, takes the base count at the 75% position, and uses that value for final FASTQ truncation.
