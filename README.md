@@ -34,7 +34,7 @@ For editable development:
 python -m pip install -e .
 ```
 
-The Python package installs the `skmer-smk2` command and bundles the Snakefile plus workflow helper scripts. It does not force-install Snakemake or other large bioinformatics executables, so it can be installed into existing HPC environments without changing their software stack.
+The Python package supports Python 3.8 or newer. It installs the `skmer-smk2` command and bundles the Snakefile plus workflow helper scripts. It does not force-install Snakemake or other large bioinformatics executables, so it can be installed into existing HPC environments without changing their software stack.
 
 ## Check Environment
 

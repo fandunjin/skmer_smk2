@@ -6,7 +6,6 @@ import os
 import shutil
 import subprocess
 import sys
-from importlib.resources import files
 from pathlib import Path
 
 
@@ -85,7 +84,7 @@ MANUAL_TOOLS = {
 
 
 def resource_path(*parts):
-    return files(PACKAGE).joinpath(*parts)
+    return Path(__file__).resolve().parent.joinpath(*parts)
 
 
 def copy_tree(src, dst):
