@@ -1,0 +1,2 @@
+recursive-include skmer_smk2/workflow *
+recursive-include skmer_smk2/templates *

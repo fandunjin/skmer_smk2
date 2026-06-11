@@ -2,6 +2,11 @@ results/
 .snakemake/
 repaired_fastq/
 skmer_*/
+skmer_smk2_*/
+.skmer_smk2_workflow/
+build/
+dist/
+*.egg-info/
 *.log
 *.err
 *.out
