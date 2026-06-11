@@ -36,6 +36,8 @@ python -m pip install -e .
 
 The Python package installs the `skmer-smk2` command and bundles the Snakefile plus workflow helper scripts. Large bioinformatics executables are checked separately by `doctor`.
 
+Python 3.9 and 3.10 install Snakemake 7.x automatically. Python 3.11 or newer installs Snakemake 8+.
+
 ## Check Environment
 
 Check the active environment:

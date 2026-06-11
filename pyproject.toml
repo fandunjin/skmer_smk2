@@ -4,12 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "skmer-smk2"
-version = "0.1.0"
+version = "0.1.1"
 description = "Packaged Snakemake workflow for Skmer, WASTER, and Mash phylogenetic analyses."
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
-    "snakemake>=8",
+    "snakemake>=7.30,<8; python_version < '3.11'",
+    "snakemake>=8; python_version >= '3.11'",
 ]
 authors = [
     { name = "fandunjin" },
