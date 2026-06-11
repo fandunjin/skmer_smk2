@@ -8,7 +8,7 @@ This project is an updated workflow derived from the style and example-data layo
 
 The workflow performs:
 
-1. Paired-end FASTQ discovery from `_1/_2` or `_R1/_R2` naming.
+1. Paired-end FASTQ discovery from `_1/_2`, `_R1/_R2`, or `.R1/.R2` naming.
 2. Read quality filtering with `fastp`.
 3. Optional plastid genome removal with `bowtie2` when a reference is supplied.
 4. Pair repair with `repair.sh`.
@@ -23,28 +23,28 @@ The workflow performs:
 
 ```text
 .
-├── snakefile
-├── run_skmer.py
-├── skmer_hpc.sh
-├── scan_repair_fastq.sh
-├── raw_data/
-│   ├── ref.fna
-│   └── raw_data/
-│       ├── sample1.R1.fq.gz
-│       ├── sample1.R2.fq.gz
-│       └── ...
-├── scripts/
-│   ├── distance_to_phylip.py
-│   ├── fastq_stats_and_sample.py
-│   ├── mash_dist_to_phylip.py
-│   ├── merge_consensus.py
-│   ├── plot_mash_heatmap.py
-│   ├── summarize_fastq_stats.py
-│   └── write_sample_fastq_list.py
-└── README.md
+|-- snakefile
+|-- run_skmer.py
+|-- skmer_hpc.sh
+|-- scan_repair_fastq.sh
+|-- raw_data/
+|   |-- ref.fna
+|   `-- raw_data/
+|       |-- sample1.R1.fq.gz
+|       |-- sample1.R2.fq.gz
+|       `-- ...
+|-- scripts/
+|   |-- distance_to_phylip.py
+|   |-- fastq_stats_and_sample.py
+|   |-- mash_dist_to_phylip.py
+|   |-- merge_consensus.py
+|   |-- plot_mash_heatmap.py
+|   |-- summarize_fastq_stats.py
+|   `-- write_sample_fastq_list.py
+`-- README.md
 ```
 
-Large FASTQ files, reference files, and workflow outputs are intentionally excluded from Git.
+Large production FASTQ files, references, and workflow outputs should not be committed to Git.
 
 ## Input Data
 
@@ -107,36 +107,42 @@ With plastid filtering:
 python run_skmer.py -i /path/to/fastq_dir -ref /path/to/refDNA.fasta -s 75 -j 48
 ```
 
-Demo command:
+Demo dry-run:
 
 ```bash
-python run_skmer.py -i raw_data/raw_data -ref raw_data/ref.fna -s 75 -j 4 --dry-run
+python run_skmer.py -i raw_data/raw_data -ref raw_data/ref.fna -s 75 -j 4 --dry-run -- rep_n=2
 ```
 
-The bundled demo data has been checked with a local Snakemake dry-run using `rep_n=2`. Full execution requires the bioinformatics tools listed above, preferably in the HPC conda environment.
+The bundled demo data has been checked with a local Snakemake dry-run using `rep_n=2`. Full execution requires the bioinformatics tools listed above, preferably in a Linux or HPC conda environment.
 
 The value of `-s` is the sorted sample-depth percentile used to choose the base-count cutoff. For example, `-s 75` sorts samples by total bases from large to small, takes the base count at the 75% position, and uses that value for final FASTQ truncation.
 
 ## HPC Example
 
-Edit paths in `skmer_hpc.sh`, then submit:
+Edit `skmer_hpc.sh` or pass settings as environment variables. The script intentionally uses placeholders and does not contain personal cluster paths.
 
 ```bash
-cd /hpcfile/users/92024286/Huperzia
+export WORKDIR=/path/to/workdir
+export INPUT_DIR=/path/to/fastq_dir
+export REF=/path/to/refDNA.fasta
+export CONDA_PROFILE=/path/to/conda/etc/profile.d/conda.sh
+export CONDA_ENV=your_bioinfo_env
+export THREADS=48
+export SAMPLE_PERCENTILE=75
+export BOOTSTRAPS=100
+export EXCLUDE_SAMPLES=""
+
+cd "${WORKDIR}"
 jsub < skmer_hpc.sh
 ```
 
-Important variables in `skmer_hpc.sh`:
+If a known bad sample should be skipped, provide a comma- or space-separated list:
 
 ```bash
-WORKDIR=/hpcfile/users/92024286/Huperzia
-INPUT_DIR="${WORKDIR}"
-REF="${WORKDIR}/ref/refDNA.fasta"
-THREADS=48
-SAMPLE_PERCENTILE=75
-BOOTSTRAPS=100
-EXCLUDE_SAMPLES="H_serrata_SAMC1020837"
+export EXCLUDE_SAMPLES="sample_to_skip another_sample_to_skip"
 ```
+
+For schedulers other than JSUB, replace the header lines in `skmer_hpc.sh` with the corresponding scheduler directives.
 
 ## FASTQ Scan And Repair
 

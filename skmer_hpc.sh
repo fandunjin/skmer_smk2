@@ -6,21 +6,28 @@
 #JSUB -e skmer_err.%J
 #JSUB -cwd skmer_%J
 
-source /hpcfile/users/92024286/anaconda3/etc/profile.d/conda.sh
-set +u
-conda activate 01bio
-set -u
-
 set -euo pipefail
 
-WORKDIR=/hpcfile/users/92024286/Huperzia
-INPUT_DIR="${WORKDIR}"
-REF="${WORKDIR}/ref/refDNA.fasta"
-THREADS=48
-SAMPLE_PERCENTILE=75
-BOOTSTRAPS=100
-EXCLUDE_SAMPLES="H_serrata_SAMC1020837"
+WORKDIR="${WORKDIR:-/path/to/workdir}"
+INPUT_DIR="${INPUT_DIR:-${WORKDIR}}"
+REF="${REF:-${WORKDIR}/ref/refDNA.fasta}"
+THREADS="${THREADS:-48}"
+SAMPLE_PERCENTILE="${SAMPLE_PERCENTILE:-75}"
+BOOTSTRAPS="${BOOTSTRAPS:-100}"
+EXCLUDE_SAMPLES="${EXCLUDE_SAMPLES:-}"
+CONDA_PROFILE="${CONDA_PROFILE:-}"
+CONDA_ENV="${CONDA_ENV:-}"
 EXCLUDE_NORMALIZED="${EXCLUDE_SAMPLES//,/ }"
+
+if [[ -n "${CONDA_PROFILE}" ]]; then
+    source "${CONDA_PROFILE}"
+fi
+
+if [[ -n "${CONDA_ENV}" ]]; then
+    set +u
+    conda activate "${CONDA_ENV}"
+    set -u
+fi
 
 cd "${WORKDIR}"
 
