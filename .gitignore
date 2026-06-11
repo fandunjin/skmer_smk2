@@ -1,8 +1,10 @@
 results/
 .snakemake/
 repaired_fastq/
-skmer_*/
-skmer_smk2_*/
+skmer_[0-9]*/
+skmer_smk2_[0-9]*/
+!skmer_smk2/
+!skmer_smk2/**
 .skmer_smk2_workflow/
 build/
 dist/

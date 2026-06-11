@@ -1,0 +1,554 @@
+import glob
+import os
+import re
+import shlex
+import shutil
+
+
+rep_n = int(config.get("rep_n", 100))
+input_dir = os.path.abspath(config.get("input_dir", "."))
+ref_path = config.get("ref", "")
+sample_percentile = float(config.get("sample_percentile", 75))
+exclude_samples = set(
+    sample for sample in re.split(r"[,\s]+", str(config.get("exclude_samples", "")).strip()) if sample
+)
+
+FASTQ_EXTS = (".fq.gz", ".fastq.gz", ".fq", ".fastq")
+PAIR_PATTERNS = (
+    ("_1", "_2"),
+    ("_R1", "_R2"),
+    (".R1", ".R2"),
+)
+
+
+def split_fastq_ext(path):
+    name = os.path.basename(path)
+    for ext in FASTQ_EXTS:
+        if name.endswith(ext):
+            return name[:-len(ext)], ext
+    stem, ext = os.path.splitext(name)
+    return stem, ext
+
+
+def strip_fastq_ext(path):
+    return split_fastq_ext(path)[0]
+
+
+def discover_samples():
+    pairs = {}
+    for path in glob.glob(os.path.join(input_dir, "*")):
+        if not path.endswith(FASTQ_EXTS):
+            continue
+        stem, ext = split_fastq_ext(path)
+        for left, right in PAIR_PATTERNS:
+            if stem.endswith(left):
+                sample = stem[:-len(left)]
+                mate2 = os.path.join(input_dir, sample + right + ext)
+                if os.path.exists(mate2):
+                    pairs[sample] = {"r1": os.path.abspath(path), "r2": os.path.abspath(mate2)}
+                break
+    return dict(sorted((sample, pair) for sample, pair in pairs.items() if sample not in exclude_samples))
+
+
+PAIRS = discover_samples()
+SAMPLES = list(PAIRS)
+USE_REF = bool(ref_path)
+SAMPLE_ARGS = " ".join(shlex.quote(sample) for sample in SAMPLES)
+
+if not SAMPLES:
+    raise ValueError(
+        "No paired FASTQ files found. Expected *_1/*_2 or *_R1/*_R2 files in input_dir={}".format(input_dir)
+    )
+
+
+def raw_r1(wildcards):
+    return PAIRS[wildcards.sample]["r1"]
+
+
+def raw_r2(wildcards):
+    return PAIRS[wildcards.sample]["r2"]
+
+
+def bbmerge_r1(wildcards):
+    if USE_REF:
+        return "results/{sample}/nDNA/un-conc-mate.1.fixed.fq.gz".format(sample=wildcards.sample)
+    return "results/{sample}/clean/{sample}.R1.clean.fq.gz".format(sample=wildcards.sample)
+
+
+def bbmerge_r2(wildcards):
+    if USE_REF:
+        return "results/{sample}/nDNA/un-conc-mate.2.fixed.fq.gz".format(sample=wildcards.sample)
+    return "results/{sample}/clean/{sample}.R2.clean.fq.gz".format(sample=wildcards.sample)
+
+
+def bowtie_index_files():
+    return expand("results/ref/refDNA.{ext}", ext=["1.bt2", "2.bt2", "3.bt2", "4.bt2", "rev.1.bt2", "rev.2.bt2"])
+
+
+rule all:
+    input:
+        "results/stats/post_filter_summary.sorted.tsv",
+        "results/stats/head_summary.sorted.tsv",
+        expand("results/{sample}/nDNAOK/{sample}.fq", sample=SAMPLES),
+        "results/skmer/tree.direct.tre",
+        "results/skmer/tree.bootstrap.tre",
+        "results/skmer/tree.merged.tre",
+        "results/waster/waster.tree",
+        "results/mash/tree.direct.tre",
+        "results/mash/tree.bootstrap.tre",
+        "results/mash/tree.merged.tre",
+        "results/mash/distance_heatmap.svg"
+
+
+rule fastp:
+    input:
+        r1=raw_r1,
+        r2=raw_r2
+    output:
+        r1="results/{sample}/clean/{sample}.R1.clean.fq.gz",
+        r2="results/{sample}/clean/{sample}.R2.clean.fq.gz",
+        json="results/{sample}/clean/{sample}.fastp.json",
+        html="results/{sample}/clean/{sample}.fastp.html"
+    threads: 8
+    shell:
+        """
+        mkdir -p results/{wildcards.sample}/clean
+        fastp -i {input.r1} -I {input.r2} \
+              -o {output.r1} -O {output.r2} \
+              -l 100 \
+              -q 20 -u 5 \
+              --detect_adapter_for_pe \
+              --correction \
+              -w {threads} \
+              -j {output.json} -h {output.html}
+        """
+
+
+rule bowtie2_build:
+    input:
+        ref=lambda wildcards: os.path.abspath(ref_path)
+    output:
+        bowtie_index_files()
+    params:
+        prefix="results/ref/refDNA"
+    shell:
+        "mkdir -p results/ref && bowtie2-build {input.ref} {params.prefix}"
+
+
+rule bowtie2_filter:
+    input:
+        ref=bowtie_index_files(),
+        r1="results/{sample}/clean/{sample}.R1.clean.fq.gz",
+        r2="results/{sample}/clean/{sample}.R2.clean.fq.gz"
+    output:
+        r1="results/{sample}/nDNA/un-conc-mate.1.fq.gz",
+        r2="results/{sample}/nDNA/un-conc-mate.2.fq.gz",
+        sam="results/{sample}/nDNA/{sample}.sam"
+    threads: 48
+    shell:
+        """
+        mkdir -p results/{wildcards.sample}/nDNA
+        bowtie2 -x results/ref/refDNA \
+                -1 {input.r1} -2 {input.r2} \
+                --un-conc-gz results/{wildcards.sample}/nDNA/un-conc-mate.%.fq.gz \
+                -S {output.sam} -p {threads}
+        """
+
+
+rule repair_pairs:
+    input:
+        r1="results/{sample}/nDNA/un-conc-mate.1.fq.gz",
+        r2="results/{sample}/nDNA/un-conc-mate.2.fq.gz"
+    output:
+        r1="results/{sample}/nDNA/un-conc-mate.1.fixed.fq.gz",
+        r2="results/{sample}/nDNA/un-conc-mate.2.fixed.fq.gz",
+        single="results/{sample}/nDNA/singletons.fq.gz"
+    threads: 4
+    shell:
+        """
+        repair.sh in1={input.r1} in2={input.r2} \
+                  out1={output.r1} out2={output.r2} outs={output.single} \
+                  -Xmx4g threads={threads}
+        """
+
+
+rule bbmerge:
+    input:
+        r1=bbmerge_r1,
+        r2=bbmerge_r2
+    output:
+        merged="results/{sample}/sample_merged.fq",
+        unmerged1="results/{sample}/sample_unmerged1.fq",
+        unmerged2="results/{sample}/sample_unmerged2.fq"
+    threads: 4
+    shell:
+        "mkdir -p results/{wildcards.sample} && bbmerge.sh t={threads} in1={input.r1} in2={input.r2} out={output.merged} outu1={output.unmerged1} outu2={output.unmerged2}"
+
+
+rule concatenate_reads:
+    input:
+        "results/{sample}/sample_merged.fq",
+        "results/{sample}/sample_unmerged1.fq",
+        "results/{sample}/sample_unmerged2.fq"
+    output:
+        "results/{sample}/sample.fq"
+    shell:
+        "cat {input} > {output}"
+
+
+rule post_filter_stats:
+    input:
+        "results/{sample}/sample.fq"
+    output:
+        "results/{sample}/stats/{sample}.post_filter.tsv"
+    shell:
+        "python scripts/fastq_stats_and_sample.py stats --sample {wildcards.sample} --input {input} --output {output}"
+
+
+rule post_filter_summary:
+    input:
+        expand("results/{sample}/stats/{sample}.post_filter.tsv", sample=SAMPLES)
+    output:
+        summary="results/stats/post_filter_summary.sorted.tsv",
+        cutoff="results/stats/head_base_cutoff.txt"
+    params:
+        percentile=sample_percentile
+    shell:
+        "python scripts/summarize_fastq_stats.py --percentile {params.percentile} --summary {output.summary} --cutoff {output.cutoff} {input}"
+
+
+rule head_by_bases:
+    input:
+        fq="results/{sample}/sample.fq",
+        cutoff="results/stats/head_base_cutoff.txt"
+    output:
+        fq="results/{sample}/nDNAOK/{sample}.fq",
+        stats="results/{sample}/stats/{sample}.head.tsv"
+    shell:
+        """
+        python scripts/fastq_stats_and_sample.py sample \
+            --sample {wildcards.sample} \
+            --input {input.fq} \
+            --cutoff {input.cutoff} \
+            --output {output.fq} \
+            --stats {output.stats}
+        """
+
+
+rule head_summary:
+    input:
+        expand("results/{sample}/stats/{sample}.head.tsv", sample=SAMPLES)
+    output:
+        "results/stats/head_summary.sorted.tsv"
+    shell:
+        "python scripts/summarize_fastq_stats.py --summary {output} {input}"
+
+
+rule prepare_skmer_input_dir:
+    input:
+        expand("results/{sample}/nDNAOK/{sample}.fq", sample=SAMPLES)
+    output:
+        directory("results/skmer_input_dir")
+    run:
+        os.makedirs(output[0], exist_ok=True)
+        for f in input:
+            dest = os.path.join(output[0], os.path.basename(f))
+            if os.path.lexists(dest):
+                os.remove(dest)
+            try:
+                os.symlink(os.path.abspath(f), dest)
+            except OSError:
+                try:
+                    os.link(os.path.abspath(f), dest)
+                except OSError:
+                    shutil.copyfile(f, dest)
+
+
+rule skmer_reference:
+    input:
+        skmer_dir="results/skmer_input_dir"
+    output:
+        temp("results/skmer/dimtrx_main.txt.txt")
+    params:
+        prefix="results/skmer/dimtrx_main.txt"
+    threads: 16
+    shell:
+        "mkdir -p results/skmer && skmer reference {input.skmer_dir} -s 100000 -S 42 -p {threads} -t -o {params.prefix}"
+
+
+rule skmer_rename_main:
+    input:
+        "results/skmer/dimtrx_main.txt.txt"
+    output:
+        "results/skmer/dimtrx_main.txt"
+    shell:
+        "mv {input} {output}"
+
+
+rule skmer_subsample:
+    input:
+        main="results/skmer/dimtrx_main.txt",
+        skmer_dir="results/skmer_input_dir"
+    output:
+        expand("results/skmer/subsample/rep{i}/dimtrx_rep.txt", i=range(rep_n))
+    params:
+        reps=rep_n
+    shell:
+        """
+        skmer subsample {input.skmer_dir} \
+            -sub results/skmer/subsample \
+            -b {params.reps} -i 0 \
+            -s 100000 -S 42 -t
+        """
+
+
+rule skmer_correct:
+    input:
+        main="results/skmer/dimtrx_main.txt",
+        sub=expand("results/skmer/subsample/rep{i}/dimtrx_rep.txt", i=range(rep_n))
+    output:
+        "results/skmer/dimtrx_main_cor_.txt"
+    shell:
+        "skmer correct -main {input.main} -sub results/skmer/subsample"
+
+
+rule skmer_main_to_phylip:
+    input:
+        "results/skmer/dimtrx_main_cor_.txt"
+    output:
+        "results/skmer/dimtrx_main_cor_OK.phy"
+    params:
+        samples=SAMPLE_ARGS
+    shell:
+        "python scripts/distance_to_phylip.py --input {input} --output {output} --samples {params.samples}"
+
+
+rule skmer_fastme_direct:
+    input:
+        "results/skmer/dimtrx_main_cor_OK.phy"
+    output:
+        "results/skmer/tree.direct.tre"
+    shell:
+        "fastme -i {input} -o {output}"
+
+
+rule skmer_rep_to_phylip:
+    input:
+        txt="results/skmer/subsample/rep{idx}/dimtrx_rep.txt",
+        wait_for_correct="results/skmer/dimtrx_main_cor_.txt"
+    output:
+        "results/skmer/subsample/rep{idx}/dimtrx_rep.phy"
+    params:
+        samples=SAMPLE_ARGS
+    shell:
+        "python scripts/distance_to_phylip.py --input {input.txt} --output {output} --samples {params.samples}"
+
+
+rule skmer_fastme_rep:
+    input:
+        "results/skmer/subsample/rep{idx}/dimtrx_rep.phy"
+    output:
+        "results/skmer/subsample/rep{idx}/tree.tre"
+    shell:
+        "fastme -i {input} -o {output}"
+
+
+rule skmer_concat_bootstrap_trees:
+    input:
+        expand("results/skmer/subsample/rep{i}/tree.tre", i=range(rep_n))
+    output:
+        "results/skmer/bootstrap.trees"
+    shell:
+        "cat {input} > {output}"
+
+
+rule skmer_bootstrap_consensus:
+    input:
+        "results/skmer/bootstrap.trees"
+    output:
+        "results/skmer/tree.bootstrap.tre"
+    params:
+        outdir=os.path.abspath("results/skmer")
+    shell:
+        """
+        raxmlHPC -J MRE -z {input} -p 4424 -m GTRCAT -n skmer_bootstrap -w {params.outdir}
+        mv results/skmer/RAxML_MajorityRuleExtendedConsensusTree.skmer_bootstrap {output}
+        """
+
+
+rule skmer_merge_trees:
+    input:
+        bootstrap="results/skmer/tree.bootstrap.tre",
+        direct="results/skmer/tree.direct.tre"
+    output:
+        "results/skmer/tree.merged.tre"
+    shell:
+        "python scripts/merge_consensus.py --bootstrap {input.bootstrap} --direct {input.direct} --output {output}"
+
+
+rule waster_input_list:
+    input:
+        expand("results/{sample}/nDNAOK/{sample}.fq", sample=SAMPLES)
+    output:
+        "results/waster/input.tsv"
+    params:
+        samples=SAMPLE_ARGS
+    shell:
+        "python scripts/write_sample_fastq_list.py --output {output} --samples {params.samples} --fastqs {input:q}"
+
+
+rule waster_tree:
+    input:
+        "results/waster/input.tsv"
+    output:
+        "results/waster/waster.tree"
+    threads: 16
+    shell:
+        "mkdir -p results/waster && waster -C -t {threads} -i {input} -o {output}"
+
+
+rule mash_sketch:
+    input:
+        "results/{sample}/nDNAOK/{sample}.fq"
+    output:
+        "results/mash/sketches/{sample}.msh"
+    params:
+        prefix="results/mash/sketches/{sample}"
+    shell:
+        "mkdir -p results/mash/sketches && mash sketch -r -m 2 -s 10000 -S 42 -o {params.prefix} {input}"
+
+
+rule mash_paste:
+    input:
+        expand("results/mash/sketches/{sample}.msh", sample=SAMPLES)
+    output:
+        "results/mash/all.msh"
+    params:
+        prefix="results/mash/all"
+    shell:
+        "mkdir -p results/mash && mash paste {params.prefix} {input}"
+
+
+rule mash_dist:
+    input:
+        "results/mash/all.msh"
+    output:
+        "results/mash/distances.tsv"
+    shell:
+        "mash dist {input} {input} > {output}"
+
+
+rule mash_dist_to_phylip:
+    input:
+        "results/mash/distances.tsv"
+    output:
+        "results/mash/distances.phy"
+    params:
+        samples=SAMPLE_ARGS
+    shell:
+        "python scripts/mash_dist_to_phylip.py --input {input} --output {output} --samples {params.samples}"
+
+
+rule mash_fastme_direct:
+    input:
+        "results/mash/distances.phy"
+    output:
+        "results/mash/tree.direct.tre"
+    shell:
+        "fastme -i {input} -o {output}"
+
+
+rule mash_heatmap:
+    input:
+        "results/mash/distances.tsv"
+    output:
+        "results/mash/distance_heatmap.svg"
+    params:
+        samples=SAMPLE_ARGS
+    shell:
+        "python scripts/plot_mash_heatmap.py --input {input} --output {output} --samples {params.samples}"
+
+
+rule mash_bootstrap_sketch:
+    input:
+        "results/{sample}/nDNAOK/{sample}.fq"
+    output:
+        "results/mash/bootstrap/rep{idx}/sketches/{sample}.msh"
+    params:
+        prefix="results/mash/bootstrap/rep{idx}/sketches/{sample}",
+        seed=lambda wildcards: int(wildcards.idx) + 1
+    shell:
+        "mkdir -p results/mash/bootstrap/rep{wildcards.idx}/sketches && mash sketch -r -m 2 -s 10000 -S {params.seed} -o {params.prefix} {input}"
+
+
+rule mash_bootstrap_paste:
+    input:
+        lambda wildcards: expand("results/mash/bootstrap/rep{idx}/sketches/{sample}.msh", idx=wildcards.idx, sample=SAMPLES)
+    output:
+        "results/mash/bootstrap/rep{idx}/all.msh"
+    params:
+        prefix="results/mash/bootstrap/rep{idx}/all"
+    shell:
+        "mkdir -p results/mash/bootstrap/rep{wildcards.idx} && mash paste {params.prefix} {input}"
+
+
+rule mash_bootstrap_dist:
+    input:
+        "results/mash/bootstrap/rep{idx}/all.msh"
+    output:
+        "results/mash/bootstrap/rep{idx}/distances.tsv"
+    shell:
+        "mash dist {input} {input} > {output}"
+
+
+rule mash_bootstrap_phylip:
+    input:
+        "results/mash/bootstrap/rep{idx}/distances.tsv"
+    output:
+        "results/mash/bootstrap/rep{idx}/distances.phy"
+    params:
+        samples=SAMPLE_ARGS
+    shell:
+        "python scripts/mash_dist_to_phylip.py --input {input} --output {output} --samples {params.samples}"
+
+
+rule mash_bootstrap_fastme:
+    input:
+        "results/mash/bootstrap/rep{idx}/distances.phy"
+    output:
+        "results/mash/bootstrap/rep{idx}/tree.tre"
+    shell:
+        "fastme -i {input} -o {output}"
+
+
+rule mash_concat_bootstrap_trees:
+    input:
+        expand("results/mash/bootstrap/rep{i}/tree.tre", i=range(rep_n))
+    output:
+        "results/mash/bootstrap.trees"
+    shell:
+        "cat {input} > {output}"
+
+
+rule mash_bootstrap_consensus:
+    input:
+        "results/mash/bootstrap.trees"
+    output:
+        "results/mash/tree.bootstrap.tre"
+    params:
+        outdir=os.path.abspath("results/mash")
+    shell:
+        """
+        raxmlHPC -J MRE -z {input} -p 4424 -m GTRCAT -n mash_bootstrap -w {params.outdir}
+        mv results/mash/RAxML_MajorityRuleExtendedConsensusTree.mash_bootstrap {output}
+        """
+
+
+rule mash_merge_trees:
+    input:
+        bootstrap="results/mash/tree.bootstrap.tre",
+        direct="results/mash/tree.direct.tre"
+    output:
+        "results/mash/tree.merged.tre"
+    shell:
+        "python scripts/merge_consensus.py --bootstrap {input.bootstrap} --direct {input.direct} --output {output}"
