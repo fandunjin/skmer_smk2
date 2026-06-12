@@ -10,6 +10,18 @@ input_dir = os.path.abspath(config.get("input_dir", "."))
 ref_path = config.get("ref", "")
 sample_percentile = float(config.get("sample_percentile", 75))
 candidate_percentiles = str(config.get("candidate_percentiles", "50,60,70,75,80,90,95"))
+analysis_tokens = [
+    token.lower()
+    for token in re.split(r"[,\s]+", str(config.get("analyses", "skmer,waster,mash")).strip())
+    if token
+]
+selected_analyses = set(analysis_tokens) or {"skmer", "waster", "mash"}
+valid_analyses = {"skmer", "waster", "mash"}
+invalid_analyses = selected_analyses - valid_analyses
+if invalid_analyses:
+    raise ValueError("Invalid analyses selected: {}. Valid choices: skmer,waster,mash".format(
+        ",".join(sorted(invalid_analyses))
+    ))
 exclude_samples = set(
     sample for sample in re.split(r"[,\s]+", str(config.get("exclude_samples", "")).strip()) if sample
 )
@@ -126,20 +138,38 @@ def bowtie_index_files():
     return expand("results/ref/refDNA.{ext}", ext=["1.bt2", "2.bt2", "3.bt2", "4.bt2", "rev.1.bt2", "rev.2.bt2"])
 
 
-rule all:
-    input:
-        "results/stats/post_filter_summary.sorted.tsv",
-        "results/stats/head_cutoff_candidates.tsv",
-        "results/stats/head_summary.sorted.tsv",
-        expand("results/{sample}/nDNAOK/{sample}.fq", sample=SAMPLES),
+COMMON_OUTPUTS = [
+    "results/stats/post_filter_summary.sorted.tsv",
+    "results/stats/head_cutoff_candidates.tsv",
+    "results/stats/head_summary.sorted.tsv",
+] + expand("results/{sample}/nDNAOK/{sample}.fq", sample=SAMPLES)
+
+ANALYSIS_OUTPUTS = {
+    "skmer": [
         "results/skmer/tree.direct.tre",
         "results/skmer/tree.bootstrap.tre",
         "results/skmer/tree.merged.tre",
+    ],
+    "waster": [
         "results/waster/waster.tree",
+    ],
+    "mash": [
         "results/mash/tree.direct.tre",
         "results/mash/tree.bootstrap.tre",
         "results/mash/tree.merged.tre",
-        "results/mash/distance_heatmap.svg"
+        "results/mash/distance_heatmap.svg",
+    ],
+}
+
+FINAL_OUTPUTS = list(COMMON_OUTPUTS)
+for analysis in ("skmer", "waster", "mash"):
+    if analysis in selected_analyses:
+        FINAL_OUTPUTS.extend(ANALYSIS_OUTPUTS[analysis])
+
+
+rule all:
+    input:
+        FINAL_OUTPUTS
 
 
 rule fastp:

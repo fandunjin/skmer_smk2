@@ -151,6 +151,17 @@ def snakemake_command():
     return []
 
 
+def selected_analyses(args):
+    selected = []
+    if args.skmer:
+        selected.append("skmer")
+    if args.waster:
+        selected.append("waster")
+    if args.mash:
+        selected.append("mash")
+    return selected or ["skmer", "waster", "mash"]
+
+
 def run(args):
     snakemake_cmd = snakemake_command()
     if not snakemake_cmd:
@@ -183,6 +194,7 @@ def run(args):
         "sample_percentile={}".format(args.sample_percentile),
         "candidate_percentiles={}".format(args.candidate_percentiles),
         "rep_n={}".format(args.bootstraps),
+        "analyses={}".format(",".join(selected_analyses(args))),
         "exclude_samples={}".format(args.exclude_samples or ""),
     ]
     for tool, config_key in WORKFLOW_TOOL_CONFIG.items():
@@ -354,6 +366,9 @@ def build_parser():
     p_run.add_argument("-ref", "--ref", default="", help="Optional plastid/reference genome FASTA for bowtie2 filtering.")
     p_run.add_argument("-s", "--sample-percentile", type=float, default=75.0, help="Sorted sample base-count percentile used as the head cutoff.")
     p_run.add_argument("--candidate-percentiles", default="50,60,70,75,80,90,95", help="Comma- or whitespace-separated percentiles to report for choosing -s.")
+    p_run.add_argument("-skmer", action="store_true", help="Run the Skmer branch. If no branch is selected, all branches run.")
+    p_run.add_argument("-waster", action="store_true", help="Run the WASTER branch. If no branch is selected, all branches run.")
+    p_run.add_argument("-mash", action="store_true", help="Run the Mash branch. If no branch is selected, all branches run.")
     p_run.add_argument("-j", "--jobs", default="1", help="Snakemake job count/cores.")
     p_run.add_argument("-b", "--bootstraps", type=int, default=100, help="Bootstrap replicate count.")
     p_run.add_argument("--exclude-samples", default="", help="Comma- or whitespace-separated sample names to skip.")

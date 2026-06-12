@@ -174,6 +174,21 @@ Run with reference filtering:
 skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48
 ```
 
+Run only selected analysis branches:
+
+```bash
+# Mash only
+skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48 -mash
+
+# Skmer and Mash, without WASTER
+skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48 -skmer -mash
+
+# WASTER only
+skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48 -waster
+```
+
+If none of `-skmer`, `-waster`, or `-mash` is supplied, all three branches run.
+
 Preview the workflow without running jobs:
 
 ```bash
@@ -200,6 +215,9 @@ skmer-smk2 run -i /path/to/fastq_dir -s 75 -j 48 -- --keep-going
 | `-ref`, `--ref` | Optional reference FASTA used for Bowtie2 filtering |
 | `-s`, `--sample-percentile` | Percentile position used to choose the base-count cutoff; default `75` |
 | `--candidate-percentiles` | Percentiles included in the cutoff selection report; default `50,60,70,75,80,90,95` |
+| `-skmer` | Run the Skmer branch |
+| `-waster` | Run the WASTER branch |
+| `-mash` | Run the Mash branch |
 | `-j`, `--jobs` | Snakemake cores/jobs |
 | `-b`, `--bootstraps` | Bootstrap replicate count for Skmer and Mash; default `100` |
 | `--exclude-samples` | Comma- or whitespace-separated sample names to skip |
@@ -346,6 +364,10 @@ results/mash/tree.bootstrap.tre
 results/mash/tree.merged.tre
 results/mash/distance_heatmap.svg
 ```
+
+When `-skmer`, `-waster`, or `-mash` is used, only the selected analysis outputs
+are required by the final workflow target. Shared preprocessing and statistics
+outputs are still generated.
 
 ## Output Details
 
