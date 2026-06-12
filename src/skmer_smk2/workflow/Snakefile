@@ -14,11 +14,7 @@ exclude_samples = set(
 )
 
 FASTQ_EXTS = (".fq.gz", ".fastq.gz", ".fq", ".fastq")
-PAIR_PATTERNS = (
-    ("_1", "_2"),
-    ("_R1", "_R2"),
-    (".R1", ".R2"),
-)
+PAIR_RE = re.compile(r"^(?P<sample>.+?)(?P<sep>[_.-])(?P<mate>R?[12]|r?[12])$")
 
 
 def split_fastq_ext(path):
@@ -40,14 +36,36 @@ def discover_samples():
         if not path.endswith(FASTQ_EXTS):
             continue
         stem, ext = split_fastq_ext(path)
-        for left, right in PAIR_PATTERNS:
-            if stem.endswith(left):
-                sample = stem[:-len(left)]
-                mate2 = os.path.join(input_dir, sample + right + ext)
-                if os.path.exists(mate2):
-                    pairs[sample] = {"r1": os.path.abspath(path), "r2": os.path.abspath(mate2)}
-                break
-    return dict(sorted((sample, pair) for sample, pair in pairs.items() if sample not in exclude_samples))
+        match = PAIR_RE.match(stem)
+        if not match:
+            continue
+        sample = match.group("sample")
+        mate = match.group("mate").upper()
+        if mate in ("1", "R1"):
+            pairs.setdefault(sample, {})["r1"] = os.path.abspath(path)
+        elif mate in ("2", "R2"):
+            pairs.setdefault(sample, {})["r2"] = os.path.abspath(path)
+    complete = {}
+    for sample, pair in pairs.items():
+        if "r1" in pair and "r2" in pair:
+            complete[sample] = pair
+    return dict(sorted((sample, pair) for sample, pair in complete.items() if sample not in exclude_samples))
+
+
+def input_fastq_preview(limit=20):
+    if not os.path.isdir(input_dir):
+        return "input_dir does not exist or is not a directory"
+    files = sorted(
+        os.path.basename(path)
+        for path in glob.glob(os.path.join(input_dir, "*"))
+        if path.endswith(FASTQ_EXTS)
+    )
+    if not files:
+        return "no FASTQ files found in input_dir"
+    preview = files[:limit]
+    if len(files) > limit:
+        preview.append("... ({} more)".format(len(files) - limit))
+    return ", ".join(preview)
 
 
 PAIRS = discover_samples()
@@ -76,7 +94,10 @@ SCRIPT_PLOT_MASH_HEATMAP = shlex.quote(os.path.join(SCRIPT_DIR, "plot_mash_heatm
 
 if not SAMPLES:
     raise ValueError(
-        "No paired FASTQ files found. Expected *_1/*_2 or *_R1/*_R2 files in input_dir={}".format(input_dir)
+        "No paired FASTQ files found in input_dir={}. Expected paired names like "
+        "sample_1.fq.gz/sample_2.fq.gz, sample_R1.fq.gz/sample_R2.fq.gz, "
+        "sample.R1.fq.gz/sample.R2.fq.gz, or sample-R1.fq.gz/sample-R2.fq.gz. "
+        "FASTQ preview: {}".format(input_dir, input_fastq_preview())
     )
 
 

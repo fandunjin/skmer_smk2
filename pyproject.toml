@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "skmer-smk2"
-version = "0.1.7"
+version = "0.1.8"
 description = "Packaged Snakemake workflow for Skmer, WASTER, and Mash phylogenetic analyses."
 readme = "README.md"
 requires-python = ">=3.8"

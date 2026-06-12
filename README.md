@@ -93,7 +93,7 @@ skmer-smk2 doctor --install
 
 ## Run
 
-FASTQ files can be named with `_1/_2`, `_R1/_R2`, or `.R1/.R2`:
+FASTQ files can be named with `_1/_2`, `_R1/_R2`, `.R1/.R2`, or `-R1/-R2`:
 
 ```text
 SampleA_1.fq.gz
@@ -102,7 +102,11 @@ SampleB_R1.fq.gz
 SampleB_R2.fq.gz
 SampleC.R1.fq.gz
 SampleC.R2.fq.gz
+SampleD-R1.fq.gz
+SampleD-R2.fq.gz
 ```
+
+The `-i` value must point directly to the directory containing the FASTQ files, not to the repository root. For example, use `-i raw_data/raw_data` for the bundled demo files.
 
 Run without plastid filtering:
 
