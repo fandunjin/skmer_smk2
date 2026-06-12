@@ -65,6 +65,14 @@ TOOL_FASTME = shlex.quote(str(config.get("tool_fastme", "fastme")))
 TOOL_RAXML = shlex.quote(str(config.get("tool_raxml", "raxmlHPC")))
 TOOL_WASTER = shlex.quote(str(config.get("tool_waster", "waster")))
 TOOL_MASH = shlex.quote(str(config.get("tool_mash", "mash")))
+SCRIPT_DIR = os.path.join(workflow.basedir, "scripts")
+SCRIPT_FASTQ_STATS = shlex.quote(os.path.join(SCRIPT_DIR, "fastq_stats_and_sample.py"))
+SCRIPT_SUMMARIZE_STATS = shlex.quote(os.path.join(SCRIPT_DIR, "summarize_fastq_stats.py"))
+SCRIPT_DISTANCE_TO_PHYLIP = shlex.quote(os.path.join(SCRIPT_DIR, "distance_to_phylip.py"))
+SCRIPT_MERGE_CONSENSUS = shlex.quote(os.path.join(SCRIPT_DIR, "merge_consensus.py"))
+SCRIPT_WRITE_SAMPLE_FASTQ_LIST = shlex.quote(os.path.join(SCRIPT_DIR, "write_sample_fastq_list.py"))
+SCRIPT_MASH_DIST_TO_PHYLIP = shlex.quote(os.path.join(SCRIPT_DIR, "mash_dist_to_phylip.py"))
+SCRIPT_PLOT_MASH_HEATMAP = shlex.quote(os.path.join(SCRIPT_DIR, "plot_mash_heatmap.py"))
 
 if not SAMPLES:
     raise ValueError(
@@ -213,7 +221,7 @@ rule post_filter_stats:
     output:
         "results/{sample}/stats/{sample}.post_filter.tsv"
     shell:
-        "{TOOL_PYTHON} scripts/fastq_stats_and_sample.py stats --sample {wildcards.sample} --input {input} --output {output}"
+        "{TOOL_PYTHON} {SCRIPT_FASTQ_STATS} stats --sample {wildcards.sample} --input {input} --output {output}"
 
 
 rule post_filter_summary:
@@ -225,7 +233,7 @@ rule post_filter_summary:
     params:
         percentile=sample_percentile
     shell:
-        "{TOOL_PYTHON} scripts/summarize_fastq_stats.py --percentile {params.percentile} --summary {output.summary} --cutoff {output.cutoff} {input}"
+        "{TOOL_PYTHON} {SCRIPT_SUMMARIZE_STATS} --percentile {params.percentile} --summary {output.summary} --cutoff {output.cutoff} {input}"
 
 
 rule head_by_bases:
@@ -237,7 +245,7 @@ rule head_by_bases:
         stats="results/{sample}/stats/{sample}.head.tsv"
     shell:
         """
-        {TOOL_PYTHON} scripts/fastq_stats_and_sample.py sample \
+        {TOOL_PYTHON} {SCRIPT_FASTQ_STATS} sample \
             --sample {wildcards.sample} \
             --input {input.fq} \
             --cutoff {input.cutoff} \
@@ -252,7 +260,7 @@ rule head_summary:
     output:
         "results/stats/head_summary.sorted.tsv"
     shell:
-        "{TOOL_PYTHON} scripts/summarize_fastq_stats.py --summary {output} {input}"
+        "{TOOL_PYTHON} {SCRIPT_SUMMARIZE_STATS} --summary {output} {input}"
 
 
 rule prepare_skmer_input_dir:
@@ -331,7 +339,7 @@ rule skmer_main_to_phylip:
     params:
         samples=SAMPLE_ARGS
     shell:
-        "{TOOL_PYTHON} scripts/distance_to_phylip.py --input {input} --output {output} --samples {params.samples}"
+        "{TOOL_PYTHON} {SCRIPT_DISTANCE_TO_PHYLIP} --input {input} --output {output} --samples {params.samples}"
 
 
 rule skmer_fastme_direct:
@@ -352,7 +360,7 @@ rule skmer_rep_to_phylip:
     params:
         samples=SAMPLE_ARGS
     shell:
-        "{TOOL_PYTHON} scripts/distance_to_phylip.py --input {input.txt} --output {output} --samples {params.samples}"
+        "{TOOL_PYTHON} {SCRIPT_DISTANCE_TO_PHYLIP} --input {input.txt} --output {output} --samples {params.samples}"
 
 
 rule skmer_fastme_rep:
@@ -394,7 +402,7 @@ rule skmer_merge_trees:
     output:
         "results/skmer/tree.merged.tre"
     shell:
-        "{TOOL_PYTHON} scripts/merge_consensus.py --bootstrap {input.bootstrap} --direct {input.direct} --output {output}"
+        "{TOOL_PYTHON} {SCRIPT_MERGE_CONSENSUS} --bootstrap {input.bootstrap} --direct {input.direct} --output {output}"
 
 
 rule waster_input_list:
@@ -405,7 +413,7 @@ rule waster_input_list:
     params:
         samples=SAMPLE_ARGS
     shell:
-        "{TOOL_PYTHON} scripts/write_sample_fastq_list.py --output {output} --samples {params.samples} --fastqs {input:q}"
+        "{TOOL_PYTHON} {SCRIPT_WRITE_SAMPLE_FASTQ_LIST} --output {output} --samples {params.samples} --fastqs {input:q}"
 
 
 rule waster_tree:
@@ -457,7 +465,7 @@ rule mash_dist_to_phylip:
     params:
         samples=SAMPLE_ARGS
     shell:
-        "{TOOL_PYTHON} scripts/mash_dist_to_phylip.py --input {input} --output {output} --samples {params.samples}"
+        "{TOOL_PYTHON} {SCRIPT_MASH_DIST_TO_PHYLIP} --input {input} --output {output} --samples {params.samples}"
 
 
 rule mash_fastme_direct:
@@ -477,7 +485,7 @@ rule mash_heatmap:
     params:
         samples=SAMPLE_ARGS
     shell:
-        "{TOOL_PYTHON} scripts/plot_mash_heatmap.py --input {input} --output {output} --samples {params.samples}"
+        "{TOOL_PYTHON} {SCRIPT_PLOT_MASH_HEATMAP} --input {input} --output {output} --samples {params.samples}"
 
 
 rule mash_bootstrap_sketch:
@@ -520,7 +528,7 @@ rule mash_bootstrap_phylip:
     params:
         samples=SAMPLE_ARGS
     shell:
-        "{TOOL_PYTHON} scripts/mash_dist_to_phylip.py --input {input} --output {output} --samples {params.samples}"
+        "{TOOL_PYTHON} {SCRIPT_MASH_DIST_TO_PHYLIP} --input {input} --output {output} --samples {params.samples}"
 
 
 rule mash_bootstrap_fastme:
@@ -562,4 +570,4 @@ rule mash_merge_trees:
     output:
         "results/mash/tree.merged.tre"
     shell:
-        "{TOOL_PYTHON} scripts/merge_consensus.py --bootstrap {input.bootstrap} --direct {input.direct} --output {output}"
+        "{TOOL_PYTHON} {SCRIPT_MERGE_CONSENSUS} --bootstrap {input.bootstrap} --direct {input.direct} --output {output}"
