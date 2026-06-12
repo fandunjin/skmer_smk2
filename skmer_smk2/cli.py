@@ -8,6 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from . import __version__
+
 
 PACKAGE = "skmer_smk2"
 WORKFLOW_CACHE = ".skmer_smk2_workflow"
@@ -339,6 +341,7 @@ def build_parser():
         prog="skmer-smk2",
         description="Packaged Skmer/WASTER/Mash Snakemake workflow.",
     )
+    parser.add_argument("--version", action="version", version="skmer-smk2 {}".format(__version__))
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_run = sub.add_parser(

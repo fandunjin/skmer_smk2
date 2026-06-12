@@ -42,6 +42,17 @@ python -m pip install -e .
 
 The Python package supports Python 3.8 or newer. It installs the `skmer-smk2` command and bundles the Snakefile plus workflow helper scripts. It does not force-install Snakemake or other large bioinformatics executables, so it can be installed into existing HPC environments without changing their software stack.
 
+To upgrade an old installation and clear the packaged workflow cache:
+
+```bash
+python -m pip uninstall -y skmer-smk2
+python -m pip install --no-cache-dir --force-reinstall git+https://github.com/fandunjin/skmer_smk2.git
+rm -rf .skmer_smk2_workflow
+skmer-smk2 --version
+```
+
+If `--printshellcmds` still shows commands such as `python scripts/fastq_stats_and_sample.py`, the old workflow is still being used. A current install uses paths like `.skmer_smk2_workflow/scripts/fastq_stats_and_sample.py`.
+
 ## Check Environment
 
 Check the active environment:
