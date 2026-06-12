@@ -23,6 +23,7 @@ This package implements the requested runtime-controlled workflow:
 | Optional plastid/reference removal | `-ref REF_FASTA` enables `bowtie2-build`, `bowtie2`, and pair repair; omitting `-ref` skips those rules |
 | Statistics after optional `-ref` filtering | `results/stats/post_filter_summary.sorted.tsv` records reads, total bases, and average length after cleaning/filtering/merging |
 | Base-aware head instead of fixed read count | `-s 75` selects the base count at the 75% position after sorting samples by total bases, then writes FASTQ records until that base cutoff is reached |
+| Threshold selection report | `results/stats/head_cutoff_candidates.tsv` compares candidate cutoffs such as 50, 75, and 90 |
 | Head statistics | `results/stats/head_summary.sorted.tsv` records final reads, total bases, and average length for each normalized sample |
 | Skmer trees | direct tree, bootstrap consensus tree, and merged tree |
 | WASTER tree | one WASTER result tree |
@@ -198,6 +199,7 @@ skmer-smk2 run -i /path/to/fastq_dir -s 75 -j 48 -- --keep-going
 | `-i`, `--input` | Directory containing paired FASTQ files |
 | `-ref`, `--ref` | Optional reference FASTA used for Bowtie2 filtering |
 | `-s`, `--sample-percentile` | Percentile position used to choose the base-count cutoff; default `75` |
+| `--candidate-percentiles` | Percentiles included in the cutoff selection report; default `50,60,70,75,80,90,95` |
 | `-j`, `--jobs` | Snakemake cores/jobs |
 | `-b`, `--bootstraps` | Bootstrap replicate count for Skmer and Mash; default `100` |
 | `--exclude-samples` | Comma- or whitespace-separated sample names to skip |
@@ -239,6 +241,55 @@ it normalizes by total bases:
 
 This is length-aware. A 100 bp sample and a 150 bp sample are compared by total
 bases, not by read count alone.
+
+## Choosing A Good `-s` Value
+
+The default `-s 75` is a practical middle choice for many datasets, but some
+projects may benefit from a higher or lower cutoff. The workflow writes a
+candidate report before final head normalization:
+
+```text
+results/stats/head_cutoff_candidates.tsv
+```
+
+By default, this report compares:
+
+```text
+50,60,70,75,80,90,95
+```
+
+Important columns:
+
+| Column | Meaning |
+| --- | --- |
+| `percentile` | Candidate `-s` value |
+| `selected` | `yes` for the value actually used in the current run |
+| `position` | Sample position after sorting by total bases from high to low |
+| `sample` | Sample at that position |
+| `cutoff_bases` | Base count that would be used as the shared head cutoff |
+| `samples_truncated` | Number of samples larger than the cutoff and therefore trimmed down |
+| `samples_below_cutoff` | Number of samples smaller than the cutoff and therefore kept completely |
+| `estimated_retained_percent` | Estimated percentage of total bases retained across all samples |
+| `smallest_sample_percent_of_cutoff` | Whether the smallest sample is far below the proposed cutoff |
+
+Use the report like this:
+
+1. Check `post_filter_summary.sorted.tsv` to see the full depth distribution.
+2. Check `head_cutoff_candidates.tsv` to compare 50, 75, 90, or custom values.
+3. Lower values such as 50 choose a higher cutoff, so they retain more total
+   bases from deep samples but may leave low-depth samples below the target.
+4. Higher values such as 90 choose a lower cutoff, so they trim more data from
+   deep samples but make the normalized dataset more balanced.
+5. `samples_below_cutoff` and `smallest_sample_percent_of_cutoff` help decide
+   whether the chosen cutoff is too high for the smallest samples.
+
+Custom candidate values can be requested without changing the actual `-s`
+selection:
+
+```bash
+skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 \
+  --candidate-percentiles 40,50,60,75,90
+```
 
 ## Example Data
 
@@ -285,6 +336,7 @@ The most important final files are:
 
 ```text
 results/stats/head_summary.sorted.tsv
+results/stats/head_cutoff_candidates.tsv
 results/skmer/tree.direct.tre
 results/skmer/tree.bootstrap.tre
 results/skmer/tree.merged.tre
@@ -349,6 +401,7 @@ statistics and base-aware normalization.
 results/<sample>/stats/<sample>.post_filter.tsv
 results/stats/post_filter_summary.sorted.tsv
 results/stats/head_base_cutoff.txt
+results/stats/head_cutoff_candidates.tsv
 results/<sample>/stats/<sample>.head.tsv
 results/stats/head_summary.sorted.tsv
 results/<sample>/nDNAOK/<sample>.fq
@@ -359,6 +412,10 @@ and average read length before final head normalization. It is sorted from high
 to low by total bases.
 
 `head_base_cutoff.txt` records the base cutoff selected by `-s`.
+
+`head_cutoff_candidates.tsv` compares multiple possible `-s` values and helps
+decide whether a dataset is better normalized with 50, 75, 90, or another
+percentile.
 
 `head_summary.sorted.tsv` contains the same statistics after writing the final
 normalized FASTQ files.
@@ -439,6 +496,7 @@ Quality and depth:
 ```text
 results/<sample>/clean/<sample>.fastp.html
 results/stats/post_filter_summary.sorted.tsv
+results/stats/head_cutoff_candidates.tsv
 results/stats/head_summary.sorted.tsv
 results/mash/distance_heatmap.svg
 ```

@@ -9,6 +9,7 @@ rep_n = int(config.get("rep_n", 100))
 input_dir = os.path.abspath(config.get("input_dir", "."))
 ref_path = config.get("ref", "")
 sample_percentile = float(config.get("sample_percentile", 75))
+candidate_percentiles = str(config.get("candidate_percentiles", "50,60,70,75,80,90,95"))
 exclude_samples = set(
     sample for sample in re.split(r"[,\s]+", str(config.get("exclude_samples", "")).strip()) if sample
 )
@@ -128,6 +129,7 @@ def bowtie_index_files():
 rule all:
     input:
         "results/stats/post_filter_summary.sorted.tsv",
+        "results/stats/head_cutoff_candidates.tsv",
         "results/stats/head_summary.sorted.tsv",
         expand("results/{sample}/nDNAOK/{sample}.fq", sample=SAMPLES),
         "results/skmer/tree.direct.tre",
@@ -250,11 +252,19 @@ rule post_filter_summary:
         expand("results/{sample}/stats/{sample}.post_filter.tsv", sample=SAMPLES)
     output:
         summary="results/stats/post_filter_summary.sorted.tsv",
-        cutoff="results/stats/head_base_cutoff.txt"
+        cutoff="results/stats/head_base_cutoff.txt",
+        candidates="results/stats/head_cutoff_candidates.tsv"
     params:
-        percentile=sample_percentile
+        percentile=sample_percentile,
+        candidates=candidate_percentiles
     shell:
-        "{TOOL_PYTHON} {SCRIPT_SUMMARIZE_STATS} --percentile {params.percentile} --summary {output.summary} --cutoff {output.cutoff} {input}"
+        "{TOOL_PYTHON} {SCRIPT_SUMMARIZE_STATS} "
+        "--percentile {params.percentile} "
+        "--candidate-percentiles {params.candidates:q} "
+        "--summary {output.summary} "
+        "--cutoff {output.cutoff} "
+        "--candidates {output.candidates} "
+        "{input}"
 
 
 rule head_by_bases:

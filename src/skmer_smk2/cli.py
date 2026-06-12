@@ -181,6 +181,7 @@ def run(args):
         "--config",
         "input_dir={}".format(input_dir),
         "sample_percentile={}".format(args.sample_percentile),
+        "candidate_percentiles={}".format(args.candidate_percentiles),
         "rep_n={}".format(args.bootstraps),
         "exclude_samples={}".format(args.exclude_samples or ""),
     ]
@@ -352,6 +353,7 @@ def build_parser():
     p_run.add_argument("-i", "--input", required=True, help="Directory containing paired FASTQ files.")
     p_run.add_argument("-ref", "--ref", default="", help="Optional plastid/reference genome FASTA for bowtie2 filtering.")
     p_run.add_argument("-s", "--sample-percentile", type=float, default=75.0, help="Sorted sample base-count percentile used as the head cutoff.")
+    p_run.add_argument("--candidate-percentiles", default="50,60,70,75,80,90,95", help="Comma- or whitespace-separated percentiles to report for choosing -s.")
     p_run.add_argument("-j", "--jobs", default="1", help="Snakemake job count/cores.")
     p_run.add_argument("-b", "--bootstraps", type=int, default=100, help="Bootstrap replicate count.")
     p_run.add_argument("--exclude-samples", default="", help="Comma- or whitespace-separated sample names to skip.")
