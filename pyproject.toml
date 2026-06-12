@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "skmer-smk2"
-version = "0.1.6"
+version = "0.1.7"
 description = "Packaged Snakemake workflow for Skmer, WASTER, and Mash phylogenetic analyses."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -21,6 +21,7 @@ classifiers = [
 skmer-smk2 = "skmer_smk2.cli:main"
 
 [tool.setuptools.packages.find]
+where = ["src"]
 include = ["skmer_smk2*"]
 
 [tool.setuptools.package-data]

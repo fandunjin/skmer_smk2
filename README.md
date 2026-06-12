@@ -53,6 +53,8 @@ skmer-smk2 --version
 
 If `--printshellcmds` still shows commands such as `python scripts/fastq_stats_and_sample.py`, the old workflow is still being used. A current install uses paths like `.skmer_smk2_workflow/scripts/fastq_stats_and_sample.py`.
 
+The repository uses a `src/` package layout so the demo-data directory can live at the repository root without shadowing the installed `skmer_smk2` package when commands are run from a cloned checkout.
+
 ## Check Environment
 
 Check the active environment:
@@ -207,14 +209,15 @@ These helpers are examples only. The main interface remains `skmer-smk2 run ...`
 ```text
 .
 |-- pyproject.toml
-|-- skmer_smk2/
-|   |-- cli.py
-|   |-- templates/
-|   |   |-- jsub_submit.sh
-|   |   `-- scan_repair_fastq.sh
-|   `-- workflow/
-|       |-- Snakefile
-|       `-- scripts/
+|-- src/
+|   `-- skmer_smk2/
+|       |-- cli.py
+|       |-- templates/
+|       |   |-- jsub_submit.sh
+|       |   `-- scan_repair_fastq.sh
+|       `-- workflow/
+|           |-- Snakefile
+|           `-- scripts/
 |-- raw_data/
 `-- README.md
 ```
