@@ -1,76 +1,87 @@
-# skmer-smk2 使用说明
+# skmer-smk2
 
-`skmer-smk2` 是一个面向双端测序 FASTQ 数据的系统发育分析流程。它把 FASTQ 质控、可选参考序列过滤、读段合并、按碱基量抽样、Skmer 距离计算、WASTER 建树、Mash 距离热图与 bootstrap 共识树整合到一个 Snakemake 工作流中，并提供统一命令行入口：
+`skmer-smk2` is a packaged Snakemake workflow for phylogenetic analysis from paired-end FASTQ reads. It combines read quality control, optional reference-based read removal, read merging, base-aware downsampling, and tree inference with Skmer, WASTER, and Mash behind one command-line interface:
 
 ```bash
 skmer-smk2 run -i FASTQ_DIR -ref REF_FASTA -s 75 -j 48
 ```
 
-本仓库同时包含一些辅助脚本，用于在正式运行前扫描/修复 FASTQ 文件、处理头部截断 FASTQ、备份并替换已修复数据，以及在 HPC 集群上提交任务。
+The package is designed for both local Linux workstations and HPC clusters. The workflow command is the same in both cases; an HPC scheduler script only needs to request resources, activate the software environment, and launch `skmer-smk2 run`.
 
-## 适用场景
+## What The Workflow Does
 
-该流程适合用于从多个样本的 paired-end FASTQ 文件构建样本间系统发育关系。典型输入是每个样本一对 R1/R2 文件，输出包括：
+Starting from paired-end FASTQ files, `skmer-smk2` performs the following operations:
 
-- 过滤和抽样后的 FASTQ
-- 每个样本的 reads/bases 统计表
-- Skmer 距离矩阵和系统发育树
-- Mash 距离矩阵、系统发育树和距离热图
-- WASTER 系统发育树
+1. Discovers complete R1/R2 FASTQ pairs in the input directory.
+2. Runs `fastp` for adapter trimming, quality filtering, and paired-end correction.
+3. Optionally removes reads that map to a reference genome with `bowtie2`. This is useful for excluding plastid, chloroplast, mitochondrial, or other reference-derived reads.
+4. Repairs pair relationships after reference filtering with BBMap `repair.sh`.
+5. Merges overlapping paired reads with BBMap `bbmerge.sh`.
+6. Concatenates merged and unmerged reads into one per-sample FASTQ.
+7. Computes per-sample read and base statistics.
+8. Selects a base-count cutoff from a user-defined sample-depth percentile.
+9. Truncates each sample to the same base-count scale.
+10. Runs Skmer, WASTER, and Mash phylogenetic analyses.
+11. Builds direct trees, bootstrap trees, merged consensus trees, and a Mash distance heatmap.
 
-如果提供 `-ref` 参考序列，流程会先用 `bowtie2` 过滤掉能比对到该参考的 reads，例如去除叶绿体/质体基因组 reads；如果不提供 `-ref`，则跳过参考过滤步骤。
-
-## 仓库结构
+## Repository Layout
 
 ```text
 .
 |-- README.md
-|-- skmer_snakemake_project/
-|   |-- pyproject.toml
-|   |-- README.md
-|   |-- raw_data/
-|   `-- src/skmer_smk2/
+|-- pyproject.toml
+|-- src/
+|   `-- skmer_smk2/
 |       |-- cli.py
 |       |-- templates/
+|       |   |-- jsub_submit.sh
+|       |   `-- scan_repair_fastq.sh
 |       `-- workflow/
 |           |-- Snakefile
 |           `-- scripts/
+|-- raw_data/
 |-- repair_head_truncated_fastq.sh
-|-- replace_repaired_fastq.sh
-|-- scan_repair_fastq.sh
-|-- run_skmer.py
-|-- skmer_hpc.sh
-|-- snakefile
-`-- scripts/
+`-- replace_repaired_fastq.sh
 ```
 
-推荐优先使用 `skmer_snakemake_project/` 中打包好的 `skmer-smk2` 命令。根目录下的 `snakefile`、`run_skmer.py` 和 `scripts/` 是较早的本地运行形式，可作为参考，但日常运行建议使用安装后的命令行工具。
+Important files and directories:
 
-## 软件组成
+```text
+src/skmer_smk2/cli.py
+```
 
-主程序：
+The command-line interface. It provides `run`, `doctor`, `init`, and `repair-fastq`.
 
-- `skmer-smk2 run`：运行完整 Snakemake 工作流
-- `skmer-smk2 doctor`：检查外部依赖是否可用
-- `skmer-smk2 init`：导出 HPC/修复脚本模板
-- `skmer-smk2 repair-fastq`：复制或运行 FASTQ 扫描修复脚本
+```text
+src/skmer_smk2/workflow/Snakefile
+```
 
-核心流程：
+The packaged Snakemake workflow used by `skmer-smk2 run`.
 
-1. 自动识别输入目录中的 paired-end FASTQ
-2. 使用 `fastp` 做质控和接头处理
-3. 可选：使用 `bowtie2` 去除比对到参考序列的 reads
-4. 使用 `repair.sh` 修复过滤后 R1/R2 配对关系
-5. 使用 `bbmerge.sh` 合并 overlapping reads，并保留未合并 reads
-6. 统计每个样本总 bases，根据 `-s` 指定的百分位确定统一抽样深度
-7. 为 Skmer、WASTER 和 Mash 准备输入
-8. 运行 Skmer、Mash、WASTER 并生成树文件和热图
+```text
+src/skmer_smk2/workflow/scripts/
+```
 
-## 依赖环境
+Helper scripts for statistics, downsampling, distance matrix conversion, tree merging, and Mash heatmap plotting.
 
-Python 包本身只安装 `skmer-smk2` 命令和 Snakemake 工作流文件；大型生信软件需要安装在当前环境或可被 `PATH` 找到。
+```text
+raw_data/
+```
 
-必须或常用依赖：
+Small bundled demo files for testing installation and dry runs.
+
+```text
+repair_head_truncated_fastq.sh
+replace_repaired_fastq.sh
+```
+
+Standalone helper scripts for repairing problematic FASTQ files and safely replacing confirmed repaired files.
+
+## Requirements
+
+The Python package installs the `skmer-smk2` command and the bundled workflow files. Large bioinformatics tools are intentionally kept as external dependencies so the package can be installed into existing HPC environments without modifying the cluster software stack.
+
+Required or commonly used external tools:
 
 ```text
 python >= 3.8
@@ -78,7 +89,8 @@ snakemake
 fastp
 bowtie2
 bowtie2-build
-bbmap: repair.sh, bbmerge.sh
+repair.sh
+bbmerge.sh
 skmer
 fastme
 raxmlHPC
@@ -88,92 +100,107 @@ seqkit
 gzip
 ```
 
-其中多数工具可通过 conda/mamba 安装；`skmer` 和 `waster` 通常需要按各自上游说明手动安装，并保证命令在 `PATH` 中可用。
+Most dependencies can be installed from `conda-forge` and `bioconda`. `skmer` and `waster` may need manual installation from their upstream projects, depending on your environment.
 
-## 安装方法
+## Installation
 
-### 方法一：从本地源码安装
-
-在仓库根目录执行：
-
-```bash
-cd skmer_snakemake_project
-python -m pip install .
-```
-
-开发调试时可以使用 editable 安装：
-
-```bash
-cd skmer_snakemake_project
-python -m pip install -e .
-```
-
-安装后检查命令：
-
-```bash
-skmer-smk2 --version
-skmer-smk2 -h
-```
-
-### 方法二：从 GitHub 安装
+### Install From GitHub
 
 ```bash
 python -m pip install git+https://github.com/fandunjin/skmer_smk2.git
 ```
 
-如果 HPC 登录节点访问 GitHub SSL 不稳定，可以用 zip 安装：
+If `git clone` over HTTPS is unstable on an HPC login node, install from the GitHub zip archive instead:
 
 ```bash
 python -m pip install --no-cache-dir --force-reinstall \
   https://github.com/fandunjin/skmer_smk2/archive/refs/heads/main.zip
 ```
 
-### 方法三：安装或补齐 conda 依赖
-
-如果已有环境，例如 `01bio`：
+### Install From A Local Clone
 
 ```bash
-source /hpcfile/users/92024286/anaconda3/etc/profile.d/conda.sh
-conda activate 01bio
+git clone https://github.com/fandunjin/skmer_smk2.git
+cd skmer_smk2
+python -m pip install .
 ```
 
-先检查依赖：
+For development:
 
 ```bash
-skmer-smk2 doctor
+python -m pip install -e .
 ```
 
-严格检查：
+Confirm the command is available:
 
 ```bash
-skmer-smk2 doctor --strict
+skmer-smk2 --version
+skmer-smk2 -h
 ```
 
-自动安装 conda/bioconda 可用的软件：
+### Install External Tools With Conda Or Mamba
+
+Activate the environment you want to use:
 
 ```bash
-skmer-smk2 doctor --install
+conda activate your_env
 ```
 
-也可以手动安装常见依赖：
+Install conda-available tools:
 
 ```bash
 mamba install -c conda-forge -c bioconda \
   snakemake fastp bowtie2 bbmap fastme raxml mash seqkit gzip
 ```
 
-然后再单独安装 `skmer` 和 `waster`，并确认：
+If `mamba` is unavailable, use `conda`:
+
+```bash
+conda install -c conda-forge -c bioconda \
+  snakemake fastp bowtie2 bbmap fastme raxml mash seqkit gzip
+```
+
+Then install `skmer` and `waster` following their upstream instructions, and make sure both executables are in `PATH`:
 
 ```bash
 which skmer
 which waster
 ```
 
-## 输入文件要求
+## Environment Check
 
-输入目录必须直接包含 FASTQ 文件，不能传入仓库根目录或上一级目录。
+Run:
 
-支持的双端文件命名：
+```bash
+skmer-smk2 doctor
+```
+
+`doctor` checks whether the required tools can be resolved from the current shell. By default it is advisory: it prints `OK` or `WARN` rows but does not fail only because some tools are missing. This is useful on clusters where scheduler scripts may initialize `PATH` differently from login shells.
+
+Use strict mode when you want missing tools to return a non-zero exit code:
+
+```bash
+skmer-smk2 doctor --strict
+```
+
+Install missing conda-available packages into the active environment:
+
+```bash
+skmer-smk2 doctor --install
+```
+
+Tools checked by `doctor`:
+
+```text
+snakemake python fastp bowtie2 bowtie2-build repair.sh bbmerge.sh
+skmer fastme raxmlHPC waster mash seqkit gzip
+```
+
+## Input FASTQ Naming
+
+The input directory must directly contain paired FASTQ files. Do not pass the repository root or a parent directory.
+
+Supported paired-end naming styles:
 
 ```text
 SampleA_1.fq.gz        SampleA_2.fq.gz
@@ -182,34 +209,34 @@ SampleC.R1.fastq.gz    SampleC.R2.fastq.gz
 SampleD-R1.fq.gz       SampleD-R2.fq.gz
 ```
 
-样本名由 R1/R2 后缀前面的部分决定。例如：
+The sample name is the shared prefix before the mate suffix. For example:
 
 ```text
 H_asiatica_SAMC1020836_1.fq.gz
 H_asiatica_SAMC1020836_2.fq.gz
 ```
 
-样本名为：
+is discovered as sample:
 
 ```text
 H_asiatica_SAMC1020836
 ```
 
-运行前建议确认每个样本都有 R1 和 R2：
+Before running the workflow, confirm that every sample has both mates:
 
 ```bash
 ls *_1.fq.gz *_2.fq.gz
 ```
 
-## 快速运行
+## Basic Usage
 
-不使用参考序列过滤：
+Run without reference filtering:
 
 ```bash
 skmer-smk2 run -i /path/to/fastq_dir -s 75 -j 48 --printshellcmds
 ```
 
-使用参考序列过滤：
+Run with reference filtering:
 
 ```bash
 skmer-smk2 run \
@@ -220,53 +247,100 @@ skmer-smk2 run \
   --printshellcmds
 ```
 
-参数说明：
-
-```text
--i, --input              FASTQ 输入目录
--ref, --ref              可选参考基因组 FASTA，用于 bowtie2 过滤
--s, --sample-percentile  按样本总 bases 排序后选取的百分位，默认 75
--j, --jobs               Snakemake 可用核心数/任务数
--b, --bootstraps         bootstrap 重复次数，默认 100
---exclude-samples        跳过指定样本，逗号或空格分隔
---workdir                结果输出目录，默认当前目录
---dry-run                只预演，不实际运行
---printshellcmds         打印 Snakemake 执行的 shell 命令
-```
-
-预演命令：
+Dry run:
 
 ```bash
 skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/refDNA.fasta -s 75 -j 1 --dry-run
 ```
 
-传递额外 Snakemake 参数：
+Pass extra arguments to Snakemake after `--`:
 
 ```bash
 skmer-smk2 run -i /path/to/fastq_dir -s 75 -j 48 -- --keep-going
 ```
 
-## 示例数据
-
-打包项目中包含小型示例数据：
+### Main Run Options
 
 ```text
-skmer_snakemake_project/raw_data/raw_data/
-skmer_snakemake_project/raw_data/ref.fna
+-i, --input
 ```
 
-示例 dry-run：
+Directory containing paired FASTQ files.
+
+```text
+-ref, --ref
+```
+
+Optional reference FASTA for `bowtie2` filtering. Reads mapping to this reference are removed from downstream analysis.
+
+```text
+-s, --sample-percentile
+```
+
+Sorted sample-depth percentile used to choose the base-count cutoff. Samples are sorted by total post-filter bases from high to low; the selected percentile determines how many bases each sample contributes to final analysis. The default is `75`.
+
+```text
+-j, --jobs
+```
+
+Number of cores/jobs available to Snakemake.
+
+```text
+-b, --bootstraps
+```
+
+Number of bootstrap replicates. Default: `100`.
+
+```text
+--exclude-samples
+```
+
+Comma- or whitespace-separated sample names to skip.
+
+```text
+--workdir
+```
+
+Run directory for `results/` and the materialized workflow cache. Default: current directory.
+
+```text
+--latency-wait
+```
+
+Snakemake latency wait in seconds. Default: `120`.
+
+```text
+--dry-run
+```
+
+Preview the workflow without running commands.
+
+```text
+--printshellcmds
+```
+
+Print all shell commands executed by Snakemake.
+
+## Demo Data
+
+The repository contains small demo FASTQ and reference files:
+
+```text
+raw_data/raw_data/
+raw_data/ref.fna
+```
+
+Run a demo dry run:
 
 ```bash
-cd skmer_snakemake_project
 skmer-smk2 run -i raw_data/raw_data -ref raw_data/ref.fna -s 75 -j 1 -b 2 --dry-run
 ```
 
-## HPC 集群运行
+## HPC Usage
 
-在集群上，推荐写一个提交脚本，只负责申请资源、激活环境，然后运行同一个 `skmer-smk2 run` 命令。
+On an HPC cluster, write a scheduler script that activates the environment and then runs the same workflow command.
 
-示例 `jsub` 脚本：
+Example `jsub` script:
 
 ```bash
 #!/bin/bash
@@ -288,196 +362,504 @@ skmer-smk2 run \
   --printshellcmds
 ```
 
-提交：
+Submit:
 
 ```bash
 jsub < skmer_hpc.sh
 ```
 
-如果集群使用 `sbatch` 或 `qsub`，只需要替换脚本头部的调度器参数，主体命令不变。
+For `sbatch`, `qsub`, or another scheduler, replace only the scheduler header. The `skmer-smk2 run` command remains the same.
 
-## FASTQ 检查和修复
+## FASTQ Scan And Repair
 
-正式运行前建议先检查 FASTQ 是否完整、是否有 malformed record、R1/R2 是否能配对。
+FASTQ corruption, truncated records, and mismatched R1/R2 files should be detected before the main workflow. `skmer-smk2` provides a general repair helper, and this repository also includes a specialized helper for head/truncated FASTQ cases.
 
-### 通用扫描修复脚本
+### General FASTQ Scan
 
-复制模板：
+Copy the repair helper:
 
 ```bash
 skmer-smk2 repair-fastq --workdir . --copy-only
 ```
 
-运行：
+Run it:
 
 ```bash
 bash scan_repair_fastq.sh /path/to/fastq_dir
 ```
 
-输出：
+Outputs:
 
 ```text
 repaired_fastq/fastq_repair_report.tsv
 repaired_fastq/input_for_skmer/
 ```
 
-报告字段中的常见状态：
+Report actions:
 
 ```text
-UNCHANGED      原始文件可用，未生成修复副本
-REPAIRED       seqkit sana 修复后记录数发生变化
-NEED_REUPLOAD  gzip 流损坏或截断，需要重新下载/上传
-FAILED         修复失败，需要查看日志
+UNCHANGED
 ```
 
-后续可以把 `repaired_fastq/input_for_skmer/` 作为 `skmer-smk2 run -i` 的输入目录。
+The original file passed checks. A symlink to the original file is placed in `input_for_skmer/`.
 
-### 头部截断 FASTQ 的成对修复
+```text
+REPAIRED
+```
 
-本仓库根目录提供了专门脚本：
+`seqkit sana` produced a repaired copy and the read count changed. The repaired file is linked into `input_for_skmer/`.
+
+```text
+NEED_REUPLOAD
+```
+
+The gzip stream is incomplete or corrupted. The safest fix is to download or upload the file again from the original source.
+
+```text
+FAILED
+```
+
+Repair failed. Check the generated log file.
+
+### Pair-Aware Repair For Truncated FASTQ
+
+The standalone script:
 
 ```bash
 repair_head_truncated_fastq.sh
 ```
 
-它用于处理某些文件末端或记录头截断的 FASTQ。脚本会：
+is intended for cases where individual FASTQ records are malformed but the gzip stream is still readable. It runs `seqkit sana` on both mates, then runs `seqkit pair`, and finally validates that the output is usable as paired-end data.
 
-1. 对每个样本分别运行 `seqkit sana`
-2. 使用 `seqkit pair` 重新提取成对 reads
-3. 检查输出 gzip 是否正常
-4. 检查 R1/R2 reads 是否大于 0 且完全相等
-5. 将可用输出写入 `repaired_for_skmer/`
-6. 将空输出或坏输出隔离到 `failed_repair_outputs/`
-7. 写出 `fastq_repair_report.tsv`
-
-运行：
+Run directly:
 
 ```bash
 bash repair_head_truncated_fastq.sh
 ```
 
-或提交作业：
+Or submit to a `jsub` cluster:
 
 ```bash
 jsub < repair_head_truncated_fastq.sh
 ```
 
-检查报告：
-
-```bash
-cat fastq_repair_report.tsv
-ll repaired_for_skmer
-ll failed_repair_outputs
-```
-
-状态解释：
+Outputs:
 
 ```text
-REPAIRED          修复成功，可用于后续分析
-EMPTY_OUTPUT      R1/R2 无可配对 reads，不能用于 paired-end 分析
-UNPAIRED_OUTPUT   R1/R2 reads 数不相等，不能直接用于 paired-end 分析
-BAD_OUTPUT        gzip 或 FASTQ 统计异常
-MISSING_INPUT     输入文件不存在或为空
+fastq_repair_report.tsv
+repaired_for_skmer/
+failed_repair_outputs/
+repair_tmp/
 ```
 
-如果 `seqkit sana` 后 reads 很多，但 `seqkit pair` 得到 0 pairs，通常说明 R1/R2 的 read ID 没有交集，可能是 mate 文件下载错、上传错或来自不同数据集。这种情况不能靠普通 repair 恢复，应该回源重新下载对应 FASTQ。
+Status values:
 
-### 用修复成功文件替换原始文件
+```text
+REPAIRED
+```
 
-对于确认 `REPAIRED` 的样本，可以使用：
+The pair was repaired successfully. R1 and R2 are valid gzip files, both have more than zero reads, and read counts are equal.
+
+```text
+EMPTY_OUTPUT
+```
+
+`seqkit pair` found zero paired reads. This usually means the R1 and R2 read identifiers do not match, or the mate files are from different datasets.
+
+```text
+UNPAIRED_OUTPUT
+```
+
+R1 and R2 output counts differ. Do not use this pair as paired-end input without further investigation.
+
+```text
+BAD_OUTPUT
+```
+
+The repaired files failed gzip or FASTQ statistics checks.
+
+```text
+MISSING_INPUT
+```
+
+One or both source files were missing or empty.
+
+### Replacing Original FASTQ With Confirmed Repairs
+
+Use:
 
 ```bash
 replace_repaired_fastq.sh
 ```
 
-该脚本会：
+only for samples that were confirmed as `REPAIRED`. The script:
 
-1. 只替换脚本中列出的成功样本
-2. 替换前检查 gzip 和 reads 配对数
-3. 创建备份目录 `original_fastq_backup_YYYYMMDD_HHMMSS`
-4. 将原始 FASTQ 移入备份目录
-5. 将 `repaired_for_skmer/` 中的修复文件复制回原文件名
+1. Checks that the repaired files exist.
+2. Runs `gzip -t`.
+3. Confirms R1 and R2 read counts are equal and greater than zero.
+4. Creates a timestamped backup directory such as `original_fastq_backup_20260612_133000`.
+5. Moves the original FASTQ files into the backup directory.
+6. Copies repaired files from `repaired_for_skmer/` back to the original filenames.
 
-运行：
+Run:
 
 ```bash
 bash replace_repaired_fastq.sh
 ```
 
-检查：
+Verify:
 
 ```bash
-ll original_fastq_backup_*
-ll *.fq.gz
+ls -lh original_fastq_backup_*
+ls -lh *.fq.gz
 ```
 
-## 主要输出结果
+## Output Directory Overview
 
-运行完成后，结果通常位于当前工作目录的 `results/` 下。
-
-统计结果：
+The workflow writes results under:
 
 ```text
+results/
+```
+
+High-level layout:
+
+```text
+results/
+|-- <sample>/
+|   |-- clean/
+|   |-- nDNA/
+|   |-- nDNAOK/
+|   `-- stats/
+|-- stats/
+|-- skmer/
+|-- skmer_input_dir/
+|-- waster/
+`-- mash/
+```
+
+## Detailed Output Interpretation
+
+### Per-Sample Clean Reads
+
+```text
+results/<sample>/clean/<sample>.R1.clean.fq.gz
+results/<sample>/clean/<sample>.R2.clean.fq.gz
+results/<sample>/clean/<sample>.fastp.json
+results/<sample>/clean/<sample>.fastp.html
+```
+
+These are the `fastp` outputs.
+
+The cleaned FASTQ files are adapter-trimmed, quality-filtered paired reads. They are the input for optional reference filtering or, if no reference is supplied, for read merging.
+
+The HTML and JSON reports summarize quality before and after filtering, adapter trimming, read length distributions, duplication, and filtering reasons. Use these reports to check whether a sample has unusually poor quality, too many short reads, or excessive filtering.
+
+### Reference-Filtered Reads
+
+These files are produced only when `-ref` is supplied:
+
+```text
+results/<sample>/nDNA/un-conc-mate.1.fq.gz
+results/<sample>/nDNA/un-conc-mate.2.fq.gz
+results/<sample>/nDNA/<sample>.sam
+```
+
+`bowtie2` writes reads that did not align concordantly to the reference as `un-conc-mate.*.fq.gz`. These are the reads retained for downstream phylogenetic analysis.
+
+The SAM file records alignments to the reference. It can be inspected if you need to understand how many reads mapped to the reference or why a sample lost many reads.
+
+### Pair-Repaired Reference-Filtered Reads
+
+```text
+results/<sample>/nDNA/un-conc-mate.1.fixed.fq.gz
+results/<sample>/nDNA/un-conc-mate.2.fixed.fq.gz
+results/<sample>/nDNA/singletons.fq.gz
+```
+
+After reference filtering, some mates may be removed independently. `repair.sh` restores synchronized paired FASTQ files. The `.fixed.fq.gz` files are used by `bbmerge.sh`.
+
+`singletons.fq.gz` contains reads whose mate was missing after filtering. These reads are not used as paired reads in the downstream merge step, but the file is useful for diagnosing heavy mate loss.
+
+### Merged And Unmerged Reads
+
+```text
+results/<sample>/sample_merged.fq
+results/<sample>/sample_unmerged1.fq
+results/<sample>/sample_unmerged2.fq
+results/<sample>/sample.fq
+```
+
+`bbmerge.sh` attempts to merge overlapping R1/R2 reads.
+
+`sample_merged.fq` contains merged read pairs. `sample_unmerged1.fq` and `sample_unmerged2.fq` contain reads that could not be merged. `sample.fq` concatenates all three files and becomes the per-sample read set for statistics and base-aware downsampling.
+
+### Post-Filter Statistics
+
+```text
+results/<sample>/stats/<sample>.post_filter.tsv
 results/stats/post_filter_summary.sorted.tsv
-results/stats/head_summary.sorted.tsv
+```
+
+The per-sample `post_filter.tsv` files report read and base counts after cleaning, optional reference filtering, pair repair, merging, and concatenation.
+
+`post_filter_summary.sorted.tsv` combines all samples and sorts them by total bases. This file is important for checking whether all samples have enough sequence data and whether some samples are much shallower than the others.
+
+### Base Cutoff
+
+```text
 results/stats/head_base_cutoff.txt
 ```
 
-每个样本的中间结果：
+This file stores the base-count cutoff selected from `post_filter_summary.sorted.tsv` using the `-s/--sample-percentile` value.
+
+For example, `-s 75` sorts samples from high to low total bases and selects the base count at the 75% position. That cutoff is then used to truncate every sample to a comparable amount of sequence.
+
+This step reduces bias caused by unequal sequencing depth.
+
+### Final Downsampled FASTQ
 
 ```text
-results/<sample>/clean/
-results/<sample>/nDNA/
 results/<sample>/nDNAOK/<sample>.fq
-results/<sample>/stats/
+results/<sample>/stats/<sample>.head.tsv
+results/stats/head_summary.sorted.tsv
 ```
 
-Skmer 输出：
+`nDNAOK/<sample>.fq` is the final per-sample FASTQ used by Skmer, WASTER, and Mash.
+
+`head.tsv` records the final read and base count for each sample after downsampling.
+
+`head_summary.sorted.tsv` summarizes final input depth across all samples. This is one of the most important QC files. All retained samples should have comparable final base counts unless the sample had fewer bases than the selected cutoff.
+
+### Skmer Input Directory
+
+```text
+results/skmer_input_dir/
+```
+
+This directory contains symlinks, hard links, or copies of the final `nDNAOK/<sample>.fq` files. It is created because Skmer expects an input directory containing one file per sample.
+
+If a platform does not support symlinks, the workflow falls back to hard links or file copies.
+
+### Skmer Distance And Trees
 
 ```text
 results/skmer/dimtrx_main.txt
 results/skmer/dimtrx_main_cor_.txt
+results/skmer/dimtrx_main_cor_OK.phy
 results/skmer/tree.direct.tre
+results/skmer/bootstrap.trees
 results/skmer/tree.bootstrap.tre
 results/skmer/tree.merged.tre
+results/skmer/subsample/
 ```
 
-WASTER 输出：
+Meaning:
+
+```text
+dimtrx_main.txt
+```
+
+The main Skmer distance matrix before correction.
+
+```text
+dimtrx_main_cor_.txt
+```
+
+The corrected Skmer distance matrix generated by `skmer correct`.
+
+```text
+dimtrx_main_cor_OK.phy
+```
+
+The corrected distance matrix converted to PHYLIP format for tree inference with `fastme`.
+
+```text
+tree.direct.tre
+```
+
+The direct FastME tree inferred from the corrected Skmer distance matrix.
+
+```text
+bootstrap.trees
+```
+
+All bootstrap replicate trees concatenated into one file.
+
+```text
+tree.bootstrap.tre
+```
+
+The RAxML majority-rule extended consensus tree from bootstrap replicate trees.
+
+```text
+tree.merged.tre
+```
+
+The direct Skmer tree annotated or merged with bootstrap support information. This is often the most useful Skmer tree for reporting.
+
+```text
+subsample/
+```
+
+Skmer bootstrap replicate distance matrices and trees.
+
+### WASTER Output
 
 ```text
 results/waster/input.tsv
 results/waster/waster.tree
 ```
 
-Mash 输出：
+`input.tsv` lists sample names and final FASTQ paths passed to WASTER.
+
+`waster.tree` is the WASTER-inferred tree. It provides an independent tree estimate from the same downsampled input reads. Compare it with Skmer and Mash trees to assess whether the major topology is robust across methods.
+
+### Mash Distances, Heatmap, And Trees
 
 ```text
+results/mash/sketches/
+results/mash/all.msh
 results/mash/distances.tsv
 results/mash/distances.phy
 results/mash/distance_heatmap.svg
 results/mash/tree.direct.tre
+results/mash/bootstrap.trees
 results/mash/tree.bootstrap.tre
+results/mash/tree.merged.tre
+results/mash/bootstrap/
+```
+
+Meaning:
+
+```text
+sketches/
+```
+
+Per-sample Mash sketches built from final downsampled FASTQ files.
+
+```text
+all.msh
+```
+
+Combined Mash sketch database.
+
+```text
+distances.tsv
+```
+
+Pairwise Mash distances among all samples. Lower values indicate more similar samples.
+
+```text
+distances.phy
+```
+
+Mash distance matrix converted to PHYLIP format for FastME.
+
+```text
+distance_heatmap.svg
+```
+
+Visual heatmap of the Mash distance matrix. This is useful for quickly detecting clustering, outliers, mislabeled samples, or unexpectedly distant samples.
+
+```text
+tree.direct.tre
+```
+
+FastME tree inferred directly from the Mash distance matrix.
+
+```text
+bootstrap.trees
+```
+
+Concatenated Mash bootstrap replicate trees.
+
+```text
+tree.bootstrap.tre
+```
+
+RAxML majority-rule extended consensus tree from Mash bootstrap trees.
+
+```text
+tree.merged.tre
+```
+
+Mash direct tree merged with bootstrap support information. This is often the most useful Mash tree for reporting.
+
+```text
+bootstrap/
+```
+
+Mash bootstrap replicate sketches, distance matrices, and trees.
+
+## Which Outputs Should I Use?
+
+For quality control:
+
+```text
+results/<sample>/clean/<sample>.fastp.html
+results/stats/post_filter_summary.sorted.tsv
+results/stats/head_summary.sorted.tsv
+results/mash/distance_heatmap.svg
+```
+
+For final Skmer phylogeny:
+
+```text
+results/skmer/tree.merged.tre
+```
+
+For a Skmer tree without bootstrap annotation:
+
+```text
+results/skmer/tree.direct.tre
+```
+
+For the Skmer bootstrap consensus:
+
+```text
+results/skmer/tree.bootstrap.tre
+```
+
+For comparison with another method:
+
+```text
+results/waster/waster.tree
 results/mash/tree.merged.tre
 ```
 
-## 常见问题
+For distance-matrix based inspection:
 
-### 1. `ADDR2LINE: unbound variable`
+```text
+results/skmer/dimtrx_main_cor_OK.phy
+results/mash/distances.tsv
+results/mash/distance_heatmap.svg
+```
 
-原因通常是脚本启用了 `set -u`，而 conda 的某些 `activate.d` 脚本访问了未定义变量。解决方法是在 `conda activate` 前后临时关闭 nounset：
+## Common Problems
+
+### `ADDR2LINE: unbound variable`
+
+Some conda `activate.d` scripts reference unset variables. If a shell script enables `set -u` before `conda activate`, activation may fail with an error like:
+
+```text
+ADDR2LINE: unbound variable
+```
+
+Temporarily disable nounset during activation:
 
 ```bash
 set +u
 source /path/to/conda.sh
-conda activate 01bio
+conda activate your_env
 set -u
 ```
 
-本仓库中的修复脚本已经包含该处理。
+The helper scripts in this repository already apply this pattern.
 
-### 2. `No paired FASTQ files found`
+### `No paired FASTQ files found`
 
-检查 `-i` 是否指向真正存放 FASTQ 的目录，并确认命名符合：
+Check that `-i` points to the directory containing FASTQ files and that filenames match a supported naming style:
 
 ```text
 sample_1.fq.gz / sample_2.fq.gz
@@ -486,54 +868,67 @@ sample.R1.fq.gz / sample.R2.fq.gz
 sample-R1.fq.gz / sample-R2.fq.gz
 ```
 
-### 3. `seqkit pair` 输出 0 paired-end reads
+### `seqkit pair` Saves Zero Paired Reads
 
-如果 R1/R2 文件都有大量 reads，但配对结果为 0，说明两端 read ID 不匹配。常见原因：
+If `seqkit sana` reports many passing records but `seqkit pair` reports:
 
-- R1/R2 不是同一个样本
-- 下载或上传时 mate 文件错配
-- 数据源本身给的是非配对文件
-- read name 被预处理工具改写且两端不一致
+```text
+0 paired-end reads saved
+```
 
-这种情况不能直接作为 paired-end 数据运行，应重新获取正确的 R1/R2。
+then R1 and R2 read identifiers probably do not overlap. This usually means:
 
-### 4. 结果目录已有旧文件
+- The R1 and R2 files are from different samples.
+- One mate file was downloaded or uploaded incorrectly.
+- The data source is not a true paired-end dataset.
+- Read names were rewritten differently between mates.
 
-Snakemake 会复用已完成结果。若需要完全重跑，建议先新建工作目录，或谨慎清理旧的 `results/` 和 `.skmer_smk2_workflow/`。不要在不确认路径的情况下批量删除数据。
+This cannot be fixed by ordinary repair. Re-download or re-upload the correct mate files.
 
-### 5. 升级后仍使用旧 Snakefile
+### Old Workflow Cache Is Still Used
 
-如果 `--printshellcmds` 中还出现类似 `python scripts/fastq_stats_and_sample.py` 的旧路径，说明旧 workflow cache 仍在使用。可以删除缓存：
+`skmer-smk2 run` materializes the packaged workflow into:
+
+```text
+.skmer_smk2_workflow/
+```
+
+If you upgrade the package but still see old command paths in `--printshellcmds`, remove the cache:
 
 ```bash
 rm -rf .skmer_smk2_workflow
 ```
 
-然后重新运行：
+Then rerun the workflow.
+
+### Existing Results Are Reused
+
+Snakemake reuses existing complete outputs. If you want a clean rerun, use a new `--workdir` or carefully remove previous `results/` and `.skmer_smk2_workflow/` directories after confirming the paths.
+
+## Recommended End-To-End Workflow
+
+1. Activate the environment:
 
 ```bash
-skmer-smk2 run -i /path/to/fastq_dir -s 75 -j 48 --printshellcmds
+conda activate your_env
 ```
 
-## 推荐完整流程
-
-1. 激活环境并检查依赖：
+2. Check dependencies:
 
 ```bash
-conda activate 01bio
 skmer-smk2 doctor
 ```
 
-2. 检查并修复 FASTQ：
+3. Validate or repair FASTQ files:
 
 ```bash
 bash repair_head_truncated_fastq.sh
 cat fastq_repair_report.tsv
 ```
 
-3. 只保留 `REPAIRED` 或原本正常的 paired-end 样本。
+4. Keep only samples that are valid paired-end data.
 
-4. 运行主流程：
+5. Run the main workflow:
 
 ```bash
 skmer-smk2 run \
@@ -544,11 +939,18 @@ skmer-smk2 run \
   --printshellcmds
 ```
 
-5. 查看最终树和统计结果：
+6. Inspect QC outputs:
 
 ```bash
-ls results/skmer/*.tre
-ls results/mash/*.tre
-ls results/waster/*.tree
+cat results/stats/post_filter_summary.sorted.tsv
 cat results/stats/head_summary.sorted.tsv
 ```
+
+7. Use final trees:
+
+```text
+results/skmer/tree.merged.tre
+results/mash/tree.merged.tre
+results/waster/waster.tree
+```
+
