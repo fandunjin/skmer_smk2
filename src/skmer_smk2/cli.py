@@ -320,7 +320,7 @@ def init(args):
     if args.with_workflow:
         copy_tree(resource_path("workflow"), outdir / "workflow")
     shutil.copyfile(resource_path("templates", "scan_repair_fastq.sh"), outdir / "scan_repair_fastq.sh")
-    shutil.copyfile(resource_path("templates", "jsub_submit.sh"), outdir / "jsub_submit.sh")
+    shutil.copyfile(resource_path("templates", "submit_example.sh"), outdir / "submit_example.sh")
     print("Wrote templates to {}".format(outdir))
     return 0
 
