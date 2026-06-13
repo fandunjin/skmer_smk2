@@ -6,12 +6,14 @@ reference-based plastid filtering, base-aware depth normalization, and tree
 inference with Skmer, WASTER, and Mash.
 
 ```bash
-skmer-smk2 run -i FASTQ_DIR -ref REF_FASTA -s 75 -j 48
+skmer-smk2 input-check -i RAW_FASTQ_DIR -o input_qc
+skmer-smk2 input-repair -i RAW_FASTQ_DIR -o input_qc --samples "sampleA sampleB"
+skmer-smk2 run -i input_qc/input_for_skmer -ref REF_FASTA -s 75 -j 48
 ```
 
-The same command can be used on a local workstation or inside an HPC scheduler
-script. HPC does not use a different workflow; the scheduler only submits this
-command to a compute node.
+The same commands can be used on a local workstation or inside HPC scheduler
+scripts. HPC does not use a different workflow; the scheduler only submits these
+commands to compute nodes.
 
 ## What This Workflow Provides
 
@@ -160,15 +162,123 @@ Supported FASTQ extensions:
 .fastq
 ```
 
-## Running The Workflow
+## Input Data Check And Repair
 
-Run without reference filtering:
+Use two explicit steps before the main analysis: first check every input FASTQ
+and review the report, then repair only the sample names you choose.
+
+Step 1: check input data.
 
 ```bash
-skmer-smk2 run -i /path/to/fastq_dir -s 75 -j 48
+skmer-smk2 input-check -i /path/to/raw_fastq -o input_qc
 ```
 
-Run with reference filtering:
+Main check outputs:
+
+```text
+input_qc/input_file_report.tsv
+input_qc/input_sample_report.tsv
+input_qc/logs/*.gzip.log
+```
+
+`input_file_report.tsv` records each file's sample name, mate, path, file size,
+gzip status, seqkit status, reads, bases, and average length.
+
+`input_sample_report.tsv` is the main list to inspect. It contains:
+
+```text
+sample
+r1_file
+r2_file
+r1_size_bytes
+r2_size_bytes
+r1_gzip_status
+r2_gzip_status
+r1_reads
+r2_reads
+r1_bases
+r2_bases
+r1_avg_len
+r2_avg_len
+pair_status
+suggested_action
+note
+```
+
+Suggested actions:
+
+| Action | Meaning |
+| --- | --- |
+| `USE_AS_IS` | Original R1/R2 passed checks and can be used directly |
+| `REPAIR_CANDIDATE` | The sample should be considered for `seqkit sana` plus `repair.sh` |
+| `MISSING_PAIR` | R1 or R2 is missing |
+| `CHECK_MANUALLY` | Information is unusual and should be inspected manually |
+
+Step 2: repair selected samples by name.
+
+```bash
+skmer-smk2 input-repair -i /path/to/raw_fastq -o input_qc \
+  --samples "sampleA sampleB"
+```
+
+Comma-separated names are also accepted:
+
+```bash
+skmer-smk2 input-repair -i /path/to/raw_fastq -o input_qc \
+  --samples sampleA,sampleB
+```
+
+Repair outputs:
+
+```text
+input_qc/post_repair_file_report.tsv
+input_qc/post_repair_sample_report.tsv
+input_qc/repaired/
+input_qc/input_for_skmer/
+```
+
+Only samples listed in `--samples` are repaired. Normal samples not listed in
+`--samples` are linked into `input_for_skmer/`. Abnormal samples not listed in
+`--samples` are not included, which avoids accidentally analyzing known bad
+inputs.
+
+After reviewing `post_repair_sample_report.tsv`, use
+`input_qc/input_for_skmer/` as the FASTQ input directory for the main workflow.
+
+Optional helper scripts:
+
+```bash
+skmer-smk2 repair-fastq --workdir input_qc --copy-only
+```
+
+This writes:
+
+```text
+input_qc/01_input_check.sh
+input_qc/02_input_repair.sh
+```
+
+Edit only the scheduler header and environment activation lines if using them
+on an HPC system.
+
+## Running The Workflow
+
+Run the main analysis on the checked/repaired input directory.
+
+With reference filtering:
+
+```bash
+skmer-smk2 run -i input_qc/input_for_skmer -ref /path/to/ref.fasta -s 75 -j 48
+```
+
+Without reference filtering:
+
+```bash
+skmer-smk2 run -i input_qc/input_for_skmer -s 75 -j 48
+```
+
+You can still run directly on a raw FASTQ directory if you intentionally skip
+the input-check step:
 
 ```bash
 skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48
@@ -176,14 +286,21 @@ skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48
 
 Run only selected analysis branches:
 
+Mash only:
+
 ```bash
-# Mash only
 skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48 -mash
+```
 
-# Skmer and Mash, without WASTER
+Skmer and Mash, without WASTER:
+
+```bash
 skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48 -skmer -mash
+```
 
-# WASTER only
+WASTER only:
+
+```bash
 skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48 -waster
 ```
 
@@ -327,15 +444,10 @@ skmer-smk2 run -i raw_data/raw_data -ref raw_data/ref.fna -s 75 -j 1 -b 2 --dry-
 ## Generic HPC Usage
 
 Write scheduler headers according to your cluster, activate the software
-environment, and put the same `skmer-smk2 run` command in the script body.
+environment, and put the same `skmer-smk2 run` command in the script body. For
+example, after your scheduler headers and environment activation:
 
 ```bash
-#!/bin/bash
-# scheduler headers go here
-
-source /path/to/conda.sh
-conda activate your_environment
-
 skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48
 ```
 
@@ -530,6 +642,8 @@ This is the main Mash tree to inspect.
 Quality and depth:
 
 ```text
+input_qc/input_sample_report.tsv
+input_qc/post_repair_sample_report.tsv
 results/<sample>/clean/<sample>.fastp.html
 results/stats/post_filter_summary.sorted.tsv
 results/stats/head_cutoff_candidates.tsv
@@ -544,108 +658,6 @@ results/skmer/tree.merged.tre
 results/waster/waster.tree
 results/mash/tree.merged.tre
 ```
-
-## Input Data Check And Repair
-
-Use two explicit steps before the main analysis: first check every input FASTQ
-and review the report, then repair only the sample names you choose.
-
-Step 1: check input data.
-
-```bash
-skmer-smk2 input-check -i /path/to/raw_fastq -o input_qc
-```
-
-Main check outputs:
-
-```text
-input_qc/input_file_report.tsv
-input_qc/input_sample_report.tsv
-input_qc/logs/*.gzip.log
-```
-
-`input_file_report.tsv` records each file's sample name, mate, path, file size,
-gzip status, seqkit status, reads, bases, and average length.
-
-`input_sample_report.tsv` is the main list to inspect. It contains:
-
-```text
-sample
-r1_file
-r2_file
-r1_size_bytes
-r2_size_bytes
-r1_gzip_status
-r2_gzip_status
-r1_reads
-r2_reads
-r1_bases
-r2_bases
-r1_avg_len
-r2_avg_len
-pair_status
-suggested_action
-note
-```
-
-Suggested actions:
-
-| Action | Meaning |
-| --- | --- |
-| `USE_AS_IS` | Original R1/R2 passed checks and can be used directly |
-| `REPAIR_CANDIDATE` | The sample should be considered for `seqkit sana` plus `repair.sh` |
-| `MISSING_PAIR` | R1 or R2 is missing |
-| `CHECK_MANUALLY` | Information is unusual and should be inspected manually |
-
-Step 2: repair selected samples by name.
-
-```bash
-skmer-smk2 input-repair -i /path/to/raw_fastq -o input_qc \
-  --samples "sampleA sampleB"
-```
-
-Comma-separated names are also accepted:
-
-```bash
-skmer-smk2 input-repair -i /path/to/raw_fastq -o input_qc \
-  --samples sampleA,sampleB
-```
-
-Repair outputs:
-
-```text
-input_qc/post_repair_file_report.tsv
-input_qc/post_repair_sample_report.tsv
-input_qc/repaired/
-input_qc/input_for_skmer/
-```
-
-Only samples listed in `--samples` are repaired. Normal samples not listed in
-`--samples` are linked into `input_for_skmer/`. Abnormal samples not listed in
-`--samples` are not included, which avoids accidentally analyzing known bad
-inputs.
-
-After reviewing `post_repair_sample_report.tsv`, run:
-
-```bash
-skmer-smk2 run -i input_qc/input_for_skmer -ref /path/to/ref.fasta -s 75 -j 48
-```
-
-Optional helper scripts:
-
-```bash
-skmer-smk2 repair-fastq --workdir input_qc --copy-only
-```
-
-This writes:
-
-```text
-input_qc/01_input_check.sh
-input_qc/02_input_repair.sh
-```
-
-Edit only the scheduler header and environment activation lines if using them
-on an HPC system.
 
 ## Common Issues
 
