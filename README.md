@@ -589,6 +589,26 @@ skmer-smk2 doctor
 
 Then install the missing tool or make sure it is available in `PATH`.
 
+### fastp Fails For One Sample
+
+If the workflow stops at `rule fastp`, inspect the per-sample log:
+
+```bash
+cat results/<sample>/clean/<sample>.fastp.log
+```
+
+Common causes are truncated gzip files, incomplete FASTQ records, mismatched
+R1/R2 files, or reads shorter than the configured filtering length. Check gzip
+streams first:
+
+```bash
+gzip -t sample_1.fq.gz
+gzip -t sample_2.fq.gz
+```
+
+For repairable FASTQ record problems, use the repair helper before rerunning the
+workflow.
+
 ### Old Workflow Cache Is Used
 
 The packaged Snakefile is copied into the working directory when the workflow

@@ -181,6 +181,8 @@ rule fastp:
         r2="results/{sample}/clean/{sample}.R2.clean.fq.gz",
         json="results/{sample}/clean/{sample}.fastp.json",
         html="results/{sample}/clean/{sample}.fastp.html"
+    log:
+        "results/{sample}/clean/{sample}.fastp.log"
     threads: 8
     shell:
         """
@@ -192,7 +194,8 @@ rule fastp:
               --detect_adapter_for_pe \
               --correction \
               -w {threads} \
-              -j {output.json} -h {output.html}
+              -j {output.json} -h {output.html} \
+              > {log} 2>&1 || (echo "fastp failed for sample {wildcards.sample}; see {log}" >&2; tail -n 80 {log} >&2; exit 1)
         """
 
 
