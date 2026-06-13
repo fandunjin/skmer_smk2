@@ -455,7 +455,9 @@ rule skmer_bootstrap_consensus:
     shell:
         """
         {TOOL_RAXML} -J MRE -z {input} -p 4424 -m GTRCAT -n skmer_bootstrap -w {params.outdir}
-        mv results/skmer/RAxML_MajorityRuleExtendedConsensusTree.skmer_bootstrap {output}
+        {TOOL_PYTHON} {SCRIPT_MERGE_CONSENSUS} normalize \
+            --input results/skmer/RAxML_MajorityRuleExtendedConsensusTree.skmer_bootstrap \
+            --output {output}
         """
 
 
@@ -466,7 +468,7 @@ rule skmer_merge_trees:
     output:
         "results/skmer/tree.merged.tre"
     shell:
-        "{TOOL_PYTHON} {SCRIPT_MERGE_CONSENSUS} --bootstrap {input.bootstrap} --direct {input.direct} --output {output}"
+        "{TOOL_PYTHON} {SCRIPT_MERGE_CONSENSUS} merge --bootstrap {input.bootstrap} --direct {input.direct} --output {output}"
 
 
 rule waster_input_list:
@@ -623,7 +625,9 @@ rule mash_bootstrap_consensus:
     shell:
         """
         {TOOL_RAXML} -J MRE -z {input} -p 4424 -m GTRCAT -n mash_bootstrap -w {params.outdir}
-        mv results/mash/RAxML_MajorityRuleExtendedConsensusTree.mash_bootstrap {output}
+        {TOOL_PYTHON} {SCRIPT_MERGE_CONSENSUS} normalize \
+            --input results/mash/RAxML_MajorityRuleExtendedConsensusTree.mash_bootstrap \
+            --output {output}
         """
 
 
@@ -634,4 +638,4 @@ rule mash_merge_trees:
     output:
         "results/mash/tree.merged.tre"
     shell:
-        "{TOOL_PYTHON} {SCRIPT_MERGE_CONSENSUS} --bootstrap {input.bootstrap} --direct {input.direct} --output {output}"
+        "{TOOL_PYTHON} {SCRIPT_MERGE_CONSENSUS} merge --bootstrap {input.bootstrap} --direct {input.direct} --output {output}"

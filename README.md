@@ -465,10 +465,14 @@ matrix passed to FastME.
 matrix.
 
 `bootstrap.trees` contains all Skmer replicate trees. `tree.bootstrap.tre` is
-the majority-rule consensus tree produced from those replicate trees.
+the majority-rule consensus tree produced from those replicate trees. RAxML
+support annotations are normalized from `:branch[support]` to standard internal
+node labels so common tree viewers do not treat the support value as part of the
+branch length.
 
-`tree.merged.tre` combines the direct tree with bootstrap support and is the
-main Skmer tree to inspect.
+`tree.merged.tre` is one Newick tree: the direct Skmer topology with matching
+bootstrap support values copied onto internal nodes. This is the main Skmer tree
+to inspect when you want direct branch lengths and bootstrap support together.
 
 ### WASTER Outputs
 
@@ -508,8 +512,9 @@ checking outliers, unexpected sample similarity, or obvious sample mix-ups.
 
 `tree.direct.tre` is the direct Mash/FastME tree. `bootstrap.trees` contains
 replicate Mash trees generated from repeated sketches. `tree.bootstrap.tre` is
-the consensus tree. `tree.merged.tre` combines the direct tree with bootstrap
-support and is the main Mash tree to inspect.
+the normalized consensus tree. `tree.merged.tre` is one Newick tree with the
+direct Mash topology and matching bootstrap support values on internal nodes.
+This is the main Mash tree to inspect.
 
 ## Recommended Files To Inspect First
 
