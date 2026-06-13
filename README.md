@@ -619,7 +619,11 @@ workflow.
 If the workflow stops at `rule bbmerge` while opening `sample_merged.fq` or
 `sample_unmerged*.fq`, update to a recent `skmer-smk2` release and rerun the
 same command. The workflow passes `overwrite=t` to BBMap tools so a failed
-attempt can replace its own partial outputs on the next run.
+attempt can replace its own partial outputs on the next run. The `bbmerge` rule
+also removes its three sample-level output files before rerunning, which avoids
+stale partial files from a previous failed attempt. It also calls `bbmerge.sh`
+with `-da` to disable Java assertions that can stop some BBMap builds while
+opening output streams.
 
 ### Old Workflow Cache Is Used
 

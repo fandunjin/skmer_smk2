@@ -257,7 +257,13 @@ rule bbmerge:
         unmerged2="results/{sample}/sample_unmerged2.fq"
     threads: 4
     shell:
-        "mkdir -p results/{wildcards.sample} && {TOOL_BBMERGE} t={threads} overwrite=t in1={input.r1} in2={input.r2} out={output.merged} outu1={output.unmerged1} outu2={output.unmerged2}"
+        """
+        mkdir -p results/{wildcards.sample}
+        rm -f {output.merged} {output.unmerged1} {output.unmerged2}
+        {TOOL_BBMERGE} -da t={threads} overwrite=t \
+            in1={input.r1} in2={input.r2} \
+            out={output.merged} outu1={output.unmerged1} outu2={output.unmerged2}
+        """
 
 
 rule concatenate_reads:
