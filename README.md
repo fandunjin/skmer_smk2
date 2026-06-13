@@ -614,6 +614,13 @@ gzip -t sample_2.fq.gz
 For repairable FASTQ record problems, use the repair helper before rerunning the
 workflow.
 
+### bbmerge.sh Stops With A Java AssertionError
+
+If the workflow stops at `rule bbmerge` while opening `sample_merged.fq` or
+`sample_unmerged*.fq`, update to a recent `skmer-smk2` release and rerun the
+same command. The workflow passes `overwrite=t` to BBMap tools so a failed
+attempt can replace its own partial outputs on the next run.
+
 ### Old Workflow Cache Is Used
 
 The packaged Snakefile is copied into the working directory when the workflow
