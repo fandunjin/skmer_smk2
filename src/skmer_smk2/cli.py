@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from .input_qc import input_check_main, input_repair_main
 
 
 PACKAGE = "skmer_smk2"
@@ -332,6 +333,8 @@ def init(args):
     outdir.mkdir(parents=True, exist_ok=True)
     if args.with_workflow:
         copy_tree(resource_path("workflow"), outdir / "workflow")
+    shutil.copyfile(resource_path("templates", "01_input_check.sh"), outdir / "01_input_check.sh")
+    shutil.copyfile(resource_path("templates", "02_input_repair.sh"), outdir / "02_input_repair.sh")
     shutil.copyfile(resource_path("templates", "scan_repair_fastq.sh"), outdir / "scan_repair_fastq.sh")
     shutil.copyfile(resource_path("templates", "scan_repair_fastq_hpc.sh"), outdir / "scan_repair_fastq_hpc.sh")
     shutil.copyfile(resource_path("templates", "submit_example.sh"), outdir / "submit_example.sh")
@@ -344,9 +347,15 @@ def repair_fastq(args):
     workdir.mkdir(parents=True, exist_ok=True)
     script = workdir / "scan_repair_fastq.sh"
     hpc_script = workdir / "scan_repair_fastq_hpc.sh"
+    input_check_script = workdir / "01_input_check.sh"
+    input_repair_script = workdir / "02_input_repair.sh"
+    shutil.copyfile(resource_path("templates", "01_input_check.sh"), input_check_script)
+    shutil.copyfile(resource_path("templates", "02_input_repair.sh"), input_repair_script)
     shutil.copyfile(resource_path("templates", "scan_repair_fastq.sh"), script)
     shutil.copyfile(resource_path("templates", "scan_repair_fastq_hpc.sh"), hpc_script)
     if args.copy_only:
+        print("Wrote {}".format(input_check_script))
+        print("Wrote {}".format(input_repair_script))
         print("Wrote {}".format(script))
         print("Wrote {}".format(hpc_script))
         return 0
@@ -405,6 +414,17 @@ def build_parser():
     p_repair.add_argument("--workdir", default=".", help="Directory where the helper shell script is written.")
     p_repair.add_argument("--copy-only", action="store_true", help="Only copy the helper script.")
     p_repair.set_defaults(func=repair_fastq)
+
+    p_input_check = sub.add_parser("input-check", help="Check paired FASTQ inputs and write detailed reports.")
+    p_input_check.add_argument("-i", "--input", required=True, help="Directory containing raw FASTQ files.")
+    p_input_check.add_argument("-o", "--output", default="input_qc", help="Output directory for input QC reports.")
+    p_input_check.set_defaults(func=input_check_main)
+
+    p_input_repair = sub.add_parser("input-repair", help="Repair selected samples by sample name.")
+    p_input_repair.add_argument("-i", "--input", required=True, help="Directory containing raw FASTQ files.")
+    p_input_repair.add_argument("-o", "--output", default="input_qc", help="Output directory for repair reports and input_for_skmer.")
+    p_input_repair.add_argument("--samples", required=True, help="Comma- or whitespace-separated sample names to repair.")
+    p_input_repair.set_defaults(func=input_repair_main)
 
     return parser
 

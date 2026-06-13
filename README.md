@@ -545,84 +545,107 @@ results/waster/waster.tree
 results/mash/tree.merged.tre
 ```
 
-## FASTQ Repair Helper
+## Input Data Check And Repair
 
-The package includes a helper for checking whether paired FASTQ files are ready
-for `skmer-smk2`. It checks gzip integrity, FASTQ readability, paired R1/R2 read
-counts, and then repairs usable record-level problems with `seqkit sana` plus
-BBMap `repair.sh`.
+Use two explicit steps before the main analysis: first check every input FASTQ
+and review the report, then repair only the sample names you choose.
 
-Copy the helper script:
+Step 1: check input data.
 
 ```bash
-skmer-smk2 repair-fastq --workdir . --copy-only
+skmer-smk2 input-check -i /path/to/raw_fastq -o input_qc
 ```
 
-This writes two scripts:
+Main check outputs:
 
 ```text
-scan_repair_fastq.sh
-scan_repair_fastq_hpc.sh
+input_qc/input_file_report.tsv
+input_qc/input_sample_report.tsv
+input_qc/logs/*.gzip.log
 ```
 
-Run the normal script on a FASTQ directory:
+`input_file_report.tsv` records each file's sample name, mate, path, file size,
+gzip status, seqkit status, reads, bases, and average length.
 
-```bash
-bash scan_repair_fastq.sh /path/to/fastq_dir
-```
-
-Or run through the command wrapper:
-
-```bash
-skmer-smk2 repair-fastq -i /path/to/fastq_dir --workdir repaired_fastq
-```
-
-Main outputs:
+`input_sample_report.tsv` is the main list to inspect. It contains:
 
 ```text
-repaired_fastq/fastq_repair_report.tsv
-repaired_fastq/sample_repair_report.tsv
-repaired_fastq/input_for_skmer/
+sample
+r1_file
+r2_file
+r1_size_bytes
+r2_size_bytes
+r1_gzip_status
+r2_gzip_status
+r1_reads
+r2_reads
+r1_bases
+r2_bases
+r1_avg_len
+r2_avg_len
+pair_status
+suggested_action
+note
 ```
 
-File-level report:
-
-`fastq_repair_report.tsv` records gzip status, seqkit readability, read count,
-base count, and a note for each FASTQ file.
-
-Sample-level report:
-
-`sample_repair_report.tsv` records the paired R1/R2 action for each sample.
+Suggested actions:
 
 | Action | Meaning |
 | --- | --- |
-| `UNCHANGED` | Original R1/R2 passed gzip, readability, and equal read-count checks |
-| `REPAIRED` | `seqkit sana` and `repair.sh` produced synchronized repaired R1/R2 files |
-| `NEED_REUPLOAD` | At least one gzip stream or FASTQ file could not be read reliably |
+| `USE_AS_IS` | Original R1/R2 passed checks and can be used directly |
+| `REPAIR_CANDIDATE` | The sample should be considered for `seqkit sana` plus `repair.sh` |
 | `MISSING_PAIR` | R1 or R2 is missing |
-| `SANA_FAILED` | `seqkit sana` failed; inspect `*.seqkit_sana.log` |
-| `REPAIR_FAILED` | BBMap `repair.sh` failed or produced unequal repaired R1/R2 counts |
+| `CHECK_MANUALLY` | Information is unusual and should be inspected manually |
 
-Use `repaired_fastq/input_for_skmer/` as the `-i` directory when it contains the
-files you want to analyze.
+Step 2: repair selected samples by name.
 
 ```bash
-skmer-smk2 run -i repaired_fastq/input_for_skmer -ref /path/to/ref.fasta -s 75 -j 48
+skmer-smk2 input-repair -i /path/to/raw_fastq -o input_qc \
+  --samples "sampleA sampleB"
 ```
 
-HPC usage:
+Comma-separated names are also accepted:
 
 ```bash
-skmer-smk2 repair-fastq --workdir repaired_fastq --copy-only
+skmer-smk2 input-repair -i /path/to/raw_fastq -o input_qc \
+  --samples sampleA,sampleB
 ```
 
-Edit only the scheduler header and environment activation lines in
-`repaired_fastq/scan_repair_fastq_hpc.sh`, then submit it with your cluster's
-scheduler. The HPC wrapper calls the same repair script on the compute node:
+Repair outputs:
+
+```text
+input_qc/post_repair_file_report.tsv
+input_qc/post_repair_sample_report.tsv
+input_qc/repaired/
+input_qc/input_for_skmer/
+```
+
+Only samples listed in `--samples` are repaired. Normal samples not listed in
+`--samples` are linked into `input_for_skmer/`. Abnormal samples not listed in
+`--samples` are not included, which avoids accidentally analyzing known bad
+inputs.
+
+After reviewing `post_repair_sample_report.tsv`, run:
 
 ```bash
-bash repaired_fastq/scan_repair_fastq_hpc.sh /path/to/fastq_dir repaired_fastq
+skmer-smk2 run -i input_qc/input_for_skmer -ref /path/to/ref.fasta -s 75 -j 48
 ```
+
+Optional helper scripts:
+
+```bash
+skmer-smk2 repair-fastq --workdir input_qc --copy-only
+```
+
+This writes:
+
+```text
+input_qc/01_input_check.sh
+input_qc/02_input_repair.sh
+```
+
+Edit only the scheduler header and environment activation lines if using them
+on an HPC system.
 
 ## Common Issues
 
