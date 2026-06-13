@@ -101,6 +101,7 @@ SCRIPT_FASTQ_STATS = shlex.quote(os.path.join(SCRIPT_DIR, "fastq_stats_and_sampl
 SCRIPT_SUMMARIZE_STATS = shlex.quote(os.path.join(SCRIPT_DIR, "summarize_fastq_stats.py"))
 SCRIPT_DISTANCE_TO_PHYLIP = shlex.quote(os.path.join(SCRIPT_DIR, "distance_to_phylip.py"))
 SCRIPT_MERGE_CONSENSUS = shlex.quote(os.path.join(SCRIPT_DIR, "merge_consensus.py"))
+SCRIPT_BBMERGE_OR_FALLBACK = shlex.quote(os.path.join(SCRIPT_DIR, "bbmerge_or_fallback.py"))
 SCRIPT_WRITE_SAMPLE_FASTQ_LIST = shlex.quote(os.path.join(SCRIPT_DIR, "write_sample_fastq_list.py"))
 SCRIPT_MASH_DIST_TO_PHYLIP = shlex.quote(os.path.join(SCRIPT_DIR, "mash_dist_to_phylip.py"))
 SCRIPT_PLOT_MASH_HEATMAP = shlex.quote(os.path.join(SCRIPT_DIR, "plot_mash_heatmap.py"))
@@ -255,14 +256,20 @@ rule bbmerge:
         merged="results/{sample}/sample_merged.fq",
         unmerged1="results/{sample}/sample_unmerged1.fq",
         unmerged2="results/{sample}/sample_unmerged2.fq"
+    log:
+        "results/{sample}/bbmerge.log"
     threads: 4
     shell:
         """
-        mkdir -p results/{wildcards.sample}
-        rm -f {output.merged} {output.unmerged1} {output.unmerged2}
-        {TOOL_BBMERGE} -da t={threads} overwrite=t \
-            in1={input.r1} in2={input.r2} \
-            out={output.merged} outu1={output.unmerged1} outu2={output.unmerged2}
+        {TOOL_PYTHON} {SCRIPT_BBMERGE_OR_FALLBACK} \
+            --bbmerge {TOOL_BBMERGE} \
+            --r1 {input.r1} \
+            --r2 {input.r2} \
+            --merged {output.merged} \
+            --unmerged1 {output.unmerged1} \
+            --unmerged2 {output.unmerged2} \
+            --threads {threads} \
+            --log {log}
         """
 
 

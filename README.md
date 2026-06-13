@@ -410,12 +410,21 @@ results/<sample>/sample_merged.fq
 results/<sample>/sample_unmerged1.fq
 results/<sample>/sample_unmerged2.fq
 results/<sample>/sample.fq
+results/<sample>/bbmerge.log
 ```
 
 `sample_merged.fq` contains overlapping paired reads merged by `bbmerge.sh`.
 `sample_unmerged1.fq` and `sample_unmerged2.fq` contain reads that could not be
 merged. `sample.fq` concatenates merged and unmerged reads and is the input for
 statistics and base-aware normalization.
+
+If `bbmerge.sh` fails for a sample because of a BBMap/Java runtime error, the
+workflow falls back to a conservative unmerged-read mode for that sample:
+`sample_merged.fq` is empty, and the cleaned R1/R2 reads are copied into
+`sample_unmerged1.fq` and `sample_unmerged2.fq`. This keeps all reads available
+for downstream k-mer analyses, but that sample will not benefit from overlap
+merging. Check `bbmerge.log` for `BBMERGE_SUCCESS` or
+`BBMERGE_FALLBACK_USED`.
 
 ### Statistics And Normalized FASTQ
 
@@ -614,16 +623,14 @@ gzip -t sample_2.fq.gz
 For repairable FASTQ record problems, use the repair helper before rerunning the
 workflow.
 
-### bbmerge.sh Stops With A Java AssertionError
+### bbmerge.sh Runtime Errors
 
-If the workflow stops at `rule bbmerge` while opening `sample_merged.fq` or
-`sample_unmerged*.fq`, update to a recent `skmer-smk2` release and rerun the
-same command. The workflow passes `overwrite=t` to BBMap tools so a failed
-attempt can replace its own partial outputs on the next run. The `bbmerge` rule
-also removes its three sample-level output files before rerunning, which avoids
-stale partial files from a previous failed attempt. It also calls `bbmerge.sh`
-with `-da` to disable Java assertions that can stop some BBMap builds while
-opening output streams.
+If `bbmerge.sh` reports Java runtime errors such as `AssertionError` or
+`IndexOutOfBoundsException`, update to a recent `skmer-smk2` release and rerun
+the same command. The workflow uses a wrapper that first tries BBMerge normally
+with `overwrite=t` and `-da`. If BBMerge still fails or logs a Java exception,
+the wrapper writes a safe fallback: an empty merged-read file plus the cleaned
+R1/R2 reads as unmerged outputs.
 
 ### Old Workflow Cache Is Used
 
