@@ -547,8 +547,10 @@ results/mash/tree.merged.tre
 
 ## FASTQ Repair Helper
 
-The package also includes a helper for scanning and repairing FASTQ files before
-running the main workflow.
+The package includes a helper for checking whether paired FASTQ files are ready
+for `skmer-smk2`. It checks gzip integrity, FASTQ readability, paired R1/R2 read
+counts, and then repairs usable record-level problems with `seqkit sana` plus
+BBMap `repair.sh`.
 
 Copy the helper script:
 
@@ -556,30 +558,71 @@ Copy the helper script:
 skmer-smk2 repair-fastq --workdir . --copy-only
 ```
 
-Run it on a FASTQ directory:
+This writes two scripts:
+
+```text
+scan_repair_fastq.sh
+scan_repair_fastq_hpc.sh
+```
+
+Run the normal script on a FASTQ directory:
 
 ```bash
 bash scan_repair_fastq.sh /path/to/fastq_dir
+```
+
+Or run through the command wrapper:
+
+```bash
+skmer-smk2 repair-fastq -i /path/to/fastq_dir --workdir repaired_fastq
 ```
 
 Main outputs:
 
 ```text
 repaired_fastq/fastq_repair_report.tsv
+repaired_fastq/sample_repair_report.tsv
 repaired_fastq/input_for_skmer/
 ```
 
-Report actions:
+File-level report:
+
+`fastq_repair_report.tsv` records gzip status, seqkit readability, read count,
+base count, and a note for each FASTQ file.
+
+Sample-level report:
+
+`sample_repair_report.tsv` records the paired R1/R2 action for each sample.
 
 | Action | Meaning |
 | --- | --- |
-| `UNCHANGED` | The original file passed checks |
-| `REPAIRED` | A repaired copy was produced by `seqkit sana` |
-| `NEED_REUPLOAD` | The gzip stream is incomplete or physically truncated |
-| `FAILED` | Repair failed; inspect the log |
+| `UNCHANGED` | Original R1/R2 passed gzip, readability, and equal read-count checks |
+| `REPAIRED` | `seqkit sana` and `repair.sh` produced synchronized repaired R1/R2 files |
+| `NEED_REUPLOAD` | At least one gzip stream or FASTQ file could not be read reliably |
+| `MISSING_PAIR` | R1 or R2 is missing |
+| `SANA_FAILED` | `seqkit sana` failed; inspect `*.seqkit_sana.log` |
+| `REPAIR_FAILED` | BBMap `repair.sh` failed or produced unequal repaired R1/R2 counts |
 
 Use `repaired_fastq/input_for_skmer/` as the `-i` directory when it contains the
 files you want to analyze.
+
+```bash
+skmer-smk2 run -i repaired_fastq/input_for_skmer -ref /path/to/ref.fasta -s 75 -j 48
+```
+
+HPC usage:
+
+```bash
+skmer-smk2 repair-fastq --workdir repaired_fastq --copy-only
+```
+
+Edit only the scheduler header and environment activation lines in
+`repaired_fastq/scan_repair_fastq_hpc.sh`, then submit it with your cluster's
+scheduler. The HPC wrapper calls the same repair script on the compute node:
+
+```bash
+bash repaired_fastq/scan_repair_fastq_hpc.sh /path/to/fastq_dir repaired_fastq
+```
 
 ## Common Issues
 

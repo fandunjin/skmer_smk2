@@ -333,18 +333,24 @@ def init(args):
     if args.with_workflow:
         copy_tree(resource_path("workflow"), outdir / "workflow")
     shutil.copyfile(resource_path("templates", "scan_repair_fastq.sh"), outdir / "scan_repair_fastq.sh")
+    shutil.copyfile(resource_path("templates", "scan_repair_fastq_hpc.sh"), outdir / "scan_repair_fastq_hpc.sh")
     shutil.copyfile(resource_path("templates", "submit_example.sh"), outdir / "submit_example.sh")
     print("Wrote templates to {}".format(outdir))
     return 0
 
 
 def repair_fastq(args):
-    script = Path(args.workdir).resolve() / "scan_repair_fastq.sh"
+    workdir = Path(args.workdir).resolve()
+    workdir.mkdir(parents=True, exist_ok=True)
+    script = workdir / "scan_repair_fastq.sh"
+    hpc_script = workdir / "scan_repair_fastq_hpc.sh"
     shutil.copyfile(resource_path("templates", "scan_repair_fastq.sh"), script)
+    shutil.copyfile(resource_path("templates", "scan_repair_fastq_hpc.sh"), hpc_script)
     if args.copy_only:
         print("Wrote {}".format(script))
+        print("Wrote {}".format(hpc_script))
         return 0
-    cmd = ["bash", str(script), str(Path(args.input).resolve())]
+    cmd = ["bash", str(script), str(Path(args.input).resolve()), str(workdir)]
     print("Running:", " ".join(cmd), flush=True)
     return subprocess.call(cmd)
 
