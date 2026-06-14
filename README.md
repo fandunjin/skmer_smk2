@@ -338,6 +338,7 @@ skmer-smk2 run -i /path/to/fastq_dir -s 75 -j 48 -- --keep-going
 | `-j`, `--jobs` | Snakemake cores/jobs |
 | `-b`, `--bootstraps` | Bootstrap replicate count for Skmer and Mash; default `100` |
 | `--exclude-samples` | Comma- or whitespace-separated sample names to skip |
+| `--bbmerge-timeout` | Seconds to wait for each BBMerge job before fallback; default `14400`, use `0` to disable |
 | `--workdir` | Directory where `results/` and workflow cache are written; default current directory |
 | `--latency-wait` | Snakemake latency wait seconds; default `120` |
 | `--dry-run` | Build and print the DAG without running jobs |
@@ -530,8 +531,9 @@ results/<sample>/bbmerge.log
 merged. `sample.fq` concatenates merged and unmerged reads and is the input for
 statistics and base-aware normalization.
 
-If `bbmerge.sh` fails for a sample because of a BBMap/Java runtime error, the
-workflow falls back to a conservative unmerged-read mode for that sample:
+If `bbmerge.sh` fails for a sample because of a BBMap/Java runtime error, does
+not create all expected outputs, or exceeds `--bbmerge-timeout`, the workflow
+falls back to a conservative unmerged-read mode for that sample:
 `sample_merged.fq` is empty, and the cleaned R1/R2 reads are copied into
 `sample_unmerged1.fq` and `sample_unmerged2.fq`. This keeps all reads available
 for downstream k-mer analyses, but that sample will not benefit from overlap
@@ -704,11 +706,22 @@ workflow.
 ### bbmerge.sh Runtime Errors
 
 If `bbmerge.sh` reports Java runtime errors such as `AssertionError` or
-`IndexOutOfBoundsException`, update to a recent `skmer-smk2` release and rerun
-the same command. The workflow uses a wrapper that first tries BBMerge normally
-with `overwrite=t` and `-da`. If BBMerge still fails or logs a Java exception,
-the wrapper writes a safe fallback: an empty merged-read file plus the cleaned
-R1/R2 reads as unmerged outputs.
+`IndexOutOfBoundsException`, or if one BBMerge job appears to run forever,
+update to a recent `skmer-smk2` release and rerun the same command. The workflow
+uses a wrapper that first tries BBMerge normally with `overwrite=t` and `-da`.
+If BBMerge fails, logs a Java exception, misses expected outputs, or exceeds
+`--bbmerge-timeout`, the wrapper writes a safe fallback: an empty merged-read
+file plus the cleaned R1/R2 reads as unmerged outputs.
+
+The default timeout is 14400 seconds per sample. Increase it for unusually large
+datasets, for example:
+
+```bash
+skmer-smk2 run -i input_qc/input_for_skmer -ref /path/to/ref.fasta -s 75 -j 48 \
+  --bbmerge-timeout 21600
+```
+
+Use `--bbmerge-timeout 0` only if you want to disable the timeout completely.
 
 ### Old Workflow Cache Is Used
 

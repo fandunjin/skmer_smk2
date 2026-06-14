@@ -197,6 +197,7 @@ def run(args):
         "rep_n={}".format(args.bootstraps),
         "analyses={}".format(",".join(selected_analyses(args))),
         "exclude_samples={}".format(args.exclude_samples or ""),
+        "bbmerge_timeout={}".format(args.bbmerge_timeout),
     ]
     for tool, config_key in WORKFLOW_TOOL_CONFIG.items():
         path = find_tool(tool)
@@ -387,6 +388,7 @@ def build_parser():
     p_run.add_argument("-j", "--jobs", default="1", help="Snakemake job count/cores.")
     p_run.add_argument("-b", "--bootstraps", type=int, default=100, help="Bootstrap replicate count.")
     p_run.add_argument("--exclude-samples", default="", help="Comma- or whitespace-separated sample names to skip.")
+    p_run.add_argument("--bbmerge-timeout", type=int, default=14400, help="Seconds to wait for each BBMerge job before using unmerged-read fallback. Use 0 to disable.")
     p_run.add_argument("--workdir", default=".", help="Run directory for results and workflow cache.")
     p_run.add_argument("--latency-wait", default="120", help="Snakemake latency wait seconds.")
     p_run.add_argument("--dry-run", action="store_true", help="Run Snakemake in dry-run mode.")

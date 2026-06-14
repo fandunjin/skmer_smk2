@@ -2,6 +2,7 @@
 import argparse
 import gzip
 import os
+import signal
 import shutil
 import subprocess
 import sys
@@ -35,6 +36,45 @@ def log_message(log, message):
         handle.write(message.rstrip() + "\n")
 
 
+def stop_process(proc, log):
+    if os.name == "nt":
+        try:
+            subprocess.call(
+                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                stdout=log,
+                stderr=log,
+            )
+        except OSError:
+            proc.kill()
+    else:
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+    try:
+        proc.wait(timeout=30)
+        return
+    except subprocess.TimeoutExpired:
+        log.write("BBMerge did not stop after SIGTERM; killing it.\n")
+
+    if os.name == "nt":
+        try:
+            subprocess.call(
+                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                stdout=log,
+                stderr=log,
+            )
+        except OSError:
+            proc.kill()
+    else:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    proc.wait()
+
+
 def run_bbmerge(args):
     cmd = [
         args.bbmerge,
@@ -51,10 +91,23 @@ def run_bbmerge(args):
         log.write("Running BBMerge:\n")
         log.write(" ".join(cmd) + "\n\n")
         try:
-            return subprocess.call(cmd, stdout=log, stderr=log)
+            proc = subprocess.Popen(
+                cmd,
+                stdout=log,
+                stderr=log,
+                start_new_session=(os.name != "nt"),
+            )
         except OSError as exc:
             log.write(f"Failed to start BBMerge: {exc}\n")
             return 127
+        timeout = None if args.timeout <= 0 else args.timeout
+        try:
+            proc.communicate(timeout=timeout)
+            return proc.returncode
+        except subprocess.TimeoutExpired:
+            log.write(f"\nBBMerge timed out after {args.timeout} seconds.\n")
+            stop_process(proc, log)
+            return 124
 
 
 def bbmerge_log_has_exception(log):
@@ -78,7 +131,7 @@ def write_fallback(args, reason):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run bbmerge.sh, falling back to unmerged reads if it fails.")
+    parser = argparse.ArgumentParser(description="Run bbmerge.sh, falling back to unmerged reads if it fails or times out.")
     parser.add_argument("--bbmerge", required=True)
     parser.add_argument("--r1", required=True)
     parser.add_argument("--r2", required=True)
@@ -86,6 +139,7 @@ def main():
     parser.add_argument("--unmerged1", required=True)
     parser.add_argument("--unmerged2", required=True)
     parser.add_argument("--threads", type=int, default=1)
+    parser.add_argument("--timeout", type=int, default=14400, help="BBMerge timeout in seconds. Use 0 to disable.")
     parser.add_argument("--log", required=True)
     args = parser.parse_args()
 
@@ -94,7 +148,9 @@ def main():
 
     rc = run_bbmerge(args)
     outputs = [args.merged, args.unmerged1, args.unmerged2]
-    if rc != 0:
+    if rc == 124:
+        write_fallback(args, f"bbmerge timed out after {args.timeout} seconds")
+    elif rc != 0:
         write_fallback(args, f"bbmerge exited with status {rc}")
     elif bbmerge_log_has_exception(args.log):
         write_fallback(args, "bbmerge reported a Java exception")
