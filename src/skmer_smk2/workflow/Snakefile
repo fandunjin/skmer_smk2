@@ -370,8 +370,8 @@ rule skmer_reference:
     output:
         temp("results/skmer/dimtrx_main.txt.txt")
     params:
-        prefix="results/skmer/dimtrx_main.txt"
-    logdir="results/skmer/logs"
+        prefix="results/skmer/dimtrx_main.txt",
+        logdir="results/skmer/logs"
     log:
         "results/skmer/logs/reference.log"
     threads: skmer_threads
