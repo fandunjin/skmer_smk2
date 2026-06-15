@@ -101,6 +101,7 @@ fastme
 raxmlHPC
 waster
 mash
+jellyfish
 seqtk
 seqkit
 gzip
@@ -684,9 +685,10 @@ skmer-smk2 doctor
 
 Then install the missing tool or make sure it is available in `PATH`.
 
-If the Skmer branch fails with `FileNotFoundError: ... 'seqtk'`, install
-`seqtk` into the active environment or make sure `seqtk` is visible in `PATH`.
-Skmer calls `seqtk` internally during reference-distance estimation.
+If the Skmer branch fails with `FileNotFoundError: ... 'seqtk'` or
+`FileNotFoundError: ... 'jellyfish'`, install the missing program into the
+active environment or make sure it is visible in `PATH`. Skmer calls these
+programs internally during reference-distance estimation.
 
 ### fastp Fails For One Sample
 
