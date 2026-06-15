@@ -211,6 +211,8 @@ def run(args):
         "analyses={}".format(",".join(selected_analyses(args))),
         "exclude_samples={}".format(args.exclude_samples or ""),
         "bbmerge_timeout={}".format(args.bbmerge_timeout),
+        "skmer_sketch_size={}".format(args.skmer_sketch_size),
+        "skmer_threads={}".format(args.skmer_threads),
     ]
     tool_dirs = []
     for tool in REQUIRED_TOOLS:
@@ -411,6 +413,8 @@ def build_parser():
     p_run.add_argument("-b", "--bootstraps", type=int, default=100, help="Bootstrap replicate count.")
     p_run.add_argument("--exclude-samples", default="", help="Comma- or whitespace-separated sample names to skip.")
     p_run.add_argument("--bbmerge-timeout", type=int, default=14400, help="Seconds to wait for each BBMerge job before using unmerged-read fallback. Use 0 to disable.")
+    p_run.add_argument("--skmer-sketch-size", type=int, default=100000, help="Skmer sketch size passed to `skmer reference/subsample -s`. Lower values reduce memory use.")
+    p_run.add_argument("--skmer-threads", type=int, default=16, help="Threads used inside Skmer reference/subsample steps.")
     p_run.add_argument("--workdir", default=".", help="Run directory for results and workflow cache.")
     p_run.add_argument("--latency-wait", default="120", help="Snakemake latency wait seconds.")
     p_run.add_argument("--dry-run", action="store_true", help="Run Snakemake in dry-run mode.")

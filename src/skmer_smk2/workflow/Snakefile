@@ -11,6 +11,8 @@ ref_path = config.get("ref", "")
 sample_percentile = float(config.get("sample_percentile", 75))
 candidate_percentiles = str(config.get("candidate_percentiles", "50,60,70,75,80,90,95"))
 bbmerge_timeout = int(config.get("bbmerge_timeout", 14400))
+skmer_sketch_size = int(config.get("skmer_sketch_size", 100000))
+skmer_threads = int(config.get("skmer_threads", 16))
 analysis_tokens = [
     token.lower()
     for token in re.split(r"[,\s]+", str(config.get("analyses", "skmer,waster,mash")).strip())
@@ -369,9 +371,17 @@ rule skmer_reference:
         temp("results/skmer/dimtrx_main.txt.txt")
     params:
         prefix="results/skmer/dimtrx_main.txt"
-    threads: 16
+    logdir="results/skmer/logs"
+    log:
+        "results/skmer/logs/reference.log"
+    threads: skmer_threads
     shell:
-        "mkdir -p results/skmer && {TOOL_SKMER} reference {input.skmer_dir} -s 100000 -S 42 -p {threads} -t -o {params.prefix}"
+        """
+        mkdir -p results/skmer {params.logdir}
+        {TOOL_SKMER} reference {input.skmer_dir} \
+            -s {skmer_sketch_size} -S 42 -p {threads} -t \
+            -o {params.prefix} > {log} 2>&1
+        """
 
 
 rule skmer_rename_main:
@@ -390,13 +400,18 @@ rule skmer_subsample:
     output:
         expand("results/skmer/subsample/rep{i}/dimtrx_rep.txt", i=range(rep_n))
     params:
-        reps=rep_n
+        reps=rep_n,
+        logdir="results/skmer/logs"
+    log:
+        "results/skmer/logs/subsample.log"
+    threads: skmer_threads
     shell:
         """
+        mkdir -p {params.logdir}
         {TOOL_SKMER} subsample {input.skmer_dir} \
             -sub results/skmer/subsample \
             -b {params.reps} -i 0 \
-            -s 100000 -S 42 -t
+            -s {skmer_sketch_size} -S 42 -t > {log} 2>&1
         """
 
 
@@ -406,8 +421,10 @@ rule skmer_correct:
         sub=expand("results/skmer/subsample/rep{i}/dimtrx_rep.txt", i=range(rep_n))
     output:
         "results/skmer/dimtrx_main_cor_.txt"
+    log:
+        "results/skmer/logs/correct.log"
     shell:
-        "{TOOL_SKMER} correct -main {input.main} -sub results/skmer/subsample"
+        "{TOOL_SKMER} correct -main {input.main} -sub results/skmer/subsample > {log} 2>&1"
 
 
 rule skmer_main_to_phylip:

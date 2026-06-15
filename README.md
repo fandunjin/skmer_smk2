@@ -341,6 +341,8 @@ skmer-smk2 run -i /path/to/fastq_dir -s 75 -j 48 -- --keep-going
 | `-b`, `--bootstraps` | Bootstrap replicate count for Skmer and Mash; default `100` |
 | `--exclude-samples` | Comma- or whitespace-separated sample names to skip |
 | `--bbmerge-timeout` | Seconds to wait for each BBMerge job before fallback; default `14400`, use `0` to disable |
+| `--skmer-sketch-size` | Skmer `-s` sketch size for `reference` and `subsample`; default `100000` |
+| `--skmer-threads` | Threads used inside Skmer reference/subsample steps; default `16` |
 | `--workdir` | Directory where `results/` and workflow cache are written; default current directory |
 | `--latency-wait` | Snakemake latency wait seconds; default `120` |
 | `--dry-run` | Build and print the DAG without running jobs |
@@ -576,6 +578,9 @@ Mash.
 results/skmer/dimtrx_main.txt
 results/skmer/dimtrx_main_cor_.txt
 results/skmer/dimtrx_main_cor_OK.phy
+results/skmer/logs/reference.log
+results/skmer/logs/subsample.log
+results/skmer/logs/correct.log
 results/skmer/bootstrap.trees
 results/skmer/tree.direct.tre
 results/skmer/tree.bootstrap.tre
@@ -585,6 +590,9 @@ results/skmer/tree.merged.tre
 `dimtrx_main.txt` is the initial Skmer distance matrix. `dimtrx_main_cor_.txt`
 is the corrected Skmer distance matrix. `dimtrx_main_cor_OK.phy` is the PHYLIP
 matrix passed to FastME.
+
+`logs/reference.log`, `logs/subsample.log`, and `logs/correct.log` capture
+Skmer's detailed output for the three Skmer calculation stages.
 
 `tree.direct.tre` is the direct Skmer/FastME tree from the corrected distance
 matrix.
@@ -689,6 +697,22 @@ If the Skmer branch fails with `FileNotFoundError: ... 'seqtk'` or
 `FileNotFoundError: ... 'jellyfish'`, install the missing program into the
 active environment or make sure it is visible in `PATH`. Skmer calls these
 programs internally during reference-distance estimation.
+
+### Skmer Reference Uses Too Much Memory
+
+If `rule skmer_reference` exits after a long run and the scheduler reports very
+high memory use, lower the Skmer sketch size and optionally reduce Skmer's
+internal thread count:
+
+```bash
+skmer-smk2 run -i /path/to/fastq_dir -s 75 -j 48 \
+  --skmer-sketch-size 50000 --skmer-threads 8
+```
+
+The default is `--skmer-sketch-size 100000 --skmer-threads 16`, matching the
+original workflow. Smaller sketch sizes reduce memory and runtime pressure but
+may slightly reduce Skmer distance resolution. Inspect
+`results/skmer/logs/reference.log` for the detailed Skmer message.
 
 ### fastp Fails For One Sample
 
