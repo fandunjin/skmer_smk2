@@ -27,6 +27,7 @@ REQUIRED_TOOLS = [
     "raxmlHPC",
     "waster",
     "mash",
+    "seqtk",
     "seqkit",
     "gzip",
 ]
@@ -50,6 +51,7 @@ TOOL_CANDIDATES = {
     ),
     "waster": ("waster",),
     "mash": ("mash",),
+    "seqtk": ("seqtk",),
     "seqkit": ("seqkit",),
     "gzip": ("gzip",),
 }
@@ -76,6 +78,7 @@ CONDA_PACKAGES = {
     "fastme": "fastme",
     "raxmlHPC": "raxml",
     "mash": "mash",
+    "seqtk": "seqtk",
     "seqkit": "seqkit",
     "gzip": "gzip",
 }
@@ -143,6 +146,13 @@ def find_tool(tool):
     return ""
 
 
+def path_dir(command_or_path):
+    path = Path(str(command_or_path))
+    if path.exists():
+        return str(path.resolve().parent)
+    return ""
+
+
 def snakemake_command():
     snakemake = shutil.which("snakemake")
     if snakemake:
@@ -199,6 +209,12 @@ def run(args):
         "exclude_samples={}".format(args.exclude_samples or ""),
         "bbmerge_timeout={}".format(args.bbmerge_timeout),
     ]
+    tool_dirs = []
+    for tool in REQUIRED_TOOLS:
+        path = find_tool(tool)
+        directory = path_dir(path)
+        if directory and directory not in tool_dirs:
+            tool_dirs.append(directory)
     for tool, config_key in WORKFLOW_TOOL_CONFIG.items():
         path = find_tool(tool)
         if path:
@@ -216,7 +232,10 @@ def run(args):
         cmd.extend(extra)
 
     print("Running:", " ".join(cmd), flush=True)
-    return subprocess.call(cmd)
+    env = os.environ.copy()
+    if tool_dirs:
+        env["PATH"] = os.pathsep.join(tool_dirs + [env.get("PATH", "")])
+    return subprocess.call(cmd, env=env)
 
 
 def choose_package_manager(manager):
