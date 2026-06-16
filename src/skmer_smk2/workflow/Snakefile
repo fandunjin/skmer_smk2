@@ -98,6 +98,7 @@ TOOL_SKMER = shlex.quote(str(config.get("tool_skmer", "skmer")))
 TOOL_FASTME = shlex.quote(str(config.get("tool_fastme", "fastme")))
 TOOL_RAXML = shlex.quote(str(config.get("tool_raxml", "raxmlHPC")))
 TOOL_WASTER = shlex.quote(str(config.get("tool_waster", "waster")))
+TOOL_WASTER_BRANCHLENGTH = shlex.quote(str(config.get("tool_waster_branchlength", "waster_branchlength")))
 TOOL_MASH = shlex.quote(str(config.get("tool_mash", "mash")))
 SCRIPT_DIR = os.path.join(workflow.basedir, "scripts")
 SCRIPT_FASTQ_STATS = shlex.quote(os.path.join(SCRIPT_DIR, "fastq_stats_and_sample.py"))
@@ -156,6 +157,7 @@ ANALYSIS_OUTPUTS = {
     ],
     "waster": [
         "results/waster/waster.tree",
+        "results/waster/waster.branchlength.tree",
     ],
     "mash": [
         "results/mash/tree.direct.tre",
@@ -522,6 +524,25 @@ rule waster_tree:
     threads: 16
     shell:
         "mkdir -p results/waster && {TOOL_WASTER} -C -t {threads} -i {input} -o {output}"
+
+
+rule waster_branchlength:
+    input:
+        sample_list="results/waster/input.tsv",
+        topology="results/waster/waster.tree"
+    output:
+        "results/waster/waster.branchlength.tree"
+    log:
+        "results/waster/waster_branchlength.log"
+    threads: 16
+    shell:
+        """
+        {TOOL_WASTER_BRANCHLENGTH} -C \
+            -t {threads} \
+            -i {input.sample_list} \
+            -c {input.topology} \
+            -o {output} > {log} 2>&1
+        """
 
 
 rule mash_sketch:

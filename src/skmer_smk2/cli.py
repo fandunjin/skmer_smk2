@@ -26,6 +26,7 @@ REQUIRED_TOOLS = [
     "fastme",
     "raxmlHPC",
     "waster",
+    "waster_branchlength",
     "mash",
     "jellyfish",
     "seqtk",
@@ -51,6 +52,7 @@ TOOL_CANDIDATES = {
         "raxml",
     ),
     "waster": ("waster",),
+    "waster_branchlength": ("waster_branchlength",),
     "mash": ("mash",),
     "jellyfish": ("jellyfish",),
     "seqtk": ("seqtk",),
@@ -68,6 +70,7 @@ WORKFLOW_TOOL_CONFIG = {
     "fastme": "tool_fastme",
     "raxmlHPC": "tool_raxml",
     "waster": "tool_waster",
+    "waster_branchlength": "tool_waster_branchlength",
     "mash": "tool_mash",
 }
 CONDA_PACKAGES = {
@@ -89,6 +92,7 @@ CORE_TOOLS = {"python"}
 MANUAL_TOOLS = {
     "skmer": "Install Skmer from its upstream instructions or make sure the skmer executable is in PATH.",
     "waster": "Install WASTER from its upstream instructions or make sure the waster executable is in PATH.",
+    "waster_branchlength": "Install WASTER/ASTER with waster_branchlength or make sure the executable is in PATH.",
 }
 
 
