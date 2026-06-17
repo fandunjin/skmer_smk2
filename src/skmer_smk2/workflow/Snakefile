@@ -173,6 +173,20 @@ for analysis in ("skmer", "waster", "mash"):
         FINAL_OUTPUTS.extend(ANALYSIS_OUTPUTS[analysis])
 
 
+def migrate_legacy_mash_outputs():
+    for old, new in [
+        ("results/mash/mash_tree.direct.tre", "results/mash/tree.direct.tre"),
+        ("results/mash/mash_tree.bootstrap.tre", "results/mash/tree.bootstrap.tre"),
+        ("results/mash/mash_tree.merged.tre", "results/mash/tree.merged.tre"),
+    ]:
+        if os.path.exists(old) and not os.path.exists(new):
+            os.makedirs(os.path.dirname(new), exist_ok=True)
+            shutil.copyfile(old, new)
+
+
+migrate_legacy_mash_outputs()
+
+
 rule all:
     input:
         FINAL_OUTPUTS

@@ -661,6 +661,11 @@ the normalized consensus tree. `tree.merged.tre` is one Newick tree with the
 direct Mash topology and matching bootstrap support values on internal nodes.
 This is the main Mash tree to inspect.
 
+Older `skmer-smk2` runs may contain Mash tree files named
+`mash_tree.direct.tre`, `mash_tree.bootstrap.tre`, and `mash_tree.merged.tre`.
+Current versions automatically copy those legacy names to the standard
+`tree.*.tre` names when reusing an existing work directory.
+
 ## Recommended Files To Inspect First
 
 Quality and depth:
