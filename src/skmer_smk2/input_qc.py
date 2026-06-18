@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
@@ -182,7 +183,37 @@ def evaluate_sample(sample, pair, file_by_path):
     return "PAIRED", "USE_AS_IS", "passed input checks"
 
 
-def build_reports(input_dir, output_dir):
+def process_fastq_item(item, log_dir):
+    path = item["path"]
+    size, mtime = stat_file(path)
+    gzip_status = gzip_check(path, log_dir)
+    stats = seqkit_stats(path) if gzip_status != "BAD" else {
+        "seqkit_status": "SKIPPED",
+        "reads": "",
+        "bases": "",
+        "average_length": "",
+    }
+    note = ""
+    if not item["sample"] or not item["mate"]:
+        note = "unsupported FASTQ mate naming style"
+    elif gzip_status == "BAD":
+        note = "gzip -t failed"
+    elif stats["seqkit_status"] != "OK":
+        note = "seqkit stats failed"
+    return {
+        "sample": item["sample"],
+        "mate": item["mate"],
+        "file": path.name,
+        "path": str(path),
+        "size_bytes": size,
+        "mtime": mtime,
+        "gzip_status": gzip_status,
+        "note": note,
+        **stats,
+    }
+
+
+def build_reports(input_dir, output_dir, jobs=1):
     if not shutil.which("gzip"):
         raise RuntimeError("gzip was not found in PATH")
     if not shutil.which("seqkit"):
@@ -193,36 +224,12 @@ def build_reports(input_dir, output_dir):
     log_dir.mkdir(parents=True, exist_ok=True)
     fastqs, samples = discover_fastqs(input_dir)
 
-    file_rows = []
-    for item in fastqs:
-        path = item["path"]
-        size, mtime = stat_file(path)
-        gzip_status = gzip_check(path, log_dir)
-        stats = seqkit_stats(path) if gzip_status != "BAD" else {
-            "seqkit_status": "SKIPPED",
-            "reads": "",
-            "bases": "",
-            "average_length": "",
-        }
-        note = ""
-        if not item["sample"] or not item["mate"]:
-            note = "unsupported FASTQ mate naming style"
-        elif gzip_status == "BAD":
-            note = "gzip -t failed"
-        elif stats["seqkit_status"] != "OK":
-            note = "seqkit stats failed"
-        row = {
-            "sample": item["sample"],
-            "mate": item["mate"],
-            "file": path.name,
-            "path": str(path),
-            "size_bytes": size,
-            "mtime": mtime,
-            "gzip_status": gzip_status,
-            "note": note,
-            **stats,
-        }
-        file_rows.append(row)
+    jobs = max(1, int(jobs))
+    if jobs == 1:
+        file_rows = [process_fastq_item(item, log_dir) for item in fastqs]
+    else:
+        with ThreadPoolExecutor(max_workers=jobs) as pool:
+            file_rows = list(pool.map(lambda item: process_fastq_item(item, log_dir), fastqs))
 
     file_by_path = {row["path"]: row for row in file_rows}
     sample_rows = []
@@ -287,7 +294,7 @@ def run_sana(src, dst, log_dir):
     return run_command(["seqkit", "sana", str(src), "-o", str(dst)], log)
 
 
-def run_repair(r1, r2, out1, out2, singletons, sample, log_dir):
+def run_repair(r1, r2, out1, out2, singletons, sample, log_dir, threads=2):
     log = log_dir / (sample + ".repair.log")
     cmd = [
         "repair.sh",
@@ -298,11 +305,86 @@ def run_repair(r1, r2, out1, out2, singletons, sample, log_dir):
         "outs={}".format(singletons),
         "repair=t",
         "overwrite=t",
+        "threads={}".format(threads),
     ]
     return run_command(cmd, log)
 
 
-def repair_inputs(input_dir, output_dir, samples_text):
+def repair_one_sample(sample, row, pairs, selected, repaired_dir, input_for_skmer, log_dir, repair_threads):
+    row = dict(row)
+    pair = pairs.get(sample, {})
+    r1 = pair.get("r1")
+    r2 = pair.get("r2")
+    row["repair_action"] = "SKIPPED"
+    row["output_r1"] = ""
+    row["output_r2"] = ""
+
+    if row["suggested_action"] == "USE_AS_IS" and sample not in selected and r1 and r2:
+        out1 = input_for_skmer / Path(r1).name
+        out2 = input_for_skmer / Path(r2).name
+        link_or_copy(r1, out1)
+        link_or_copy(r2, out2)
+        row["repair_action"] = "LINKED_ORIGINAL"
+        row["output_r1"] = str(out1)
+        row["output_r2"] = str(out2)
+        return row
+
+    if sample not in selected:
+        return row
+
+    if not r1 or not r2:
+        row["repair_action"] = "REPAIR_FAILED"
+        row["note"] = "selected for repair but missing R1 or R2"
+        return row
+
+    sana_r1 = repaired_dir / "{}.R1.sana.fq.gz".format(sample)
+    sana_r2 = repaired_dir / "{}.R2.sana.fq.gz".format(sample)
+    repaired_r1 = repaired_dir / "{}.R1.repaired.fq.gz".format(sample)
+    repaired_r2 = repaired_dir / "{}.R2.repaired.fq.gz".format(sample)
+    singletons = repaired_dir / "{}.singletons.fq.gz".format(sample)
+
+    sana_rc = run_sana(r1, sana_r1, log_dir)
+    sana_rc2 = run_sana(r2, sana_r2, log_dir)
+    if sana_rc != 0 or sana_rc2 != 0:
+        row["repair_action"] = "SANA_FAILED"
+        row["note"] = "seqkit sana failed"
+        return row
+
+    repair_rc = run_repair(sana_r1, sana_r2, repaired_r1, repaired_r2, singletons, sample, log_dir, repair_threads)
+    stats1 = seqkit_stats(repaired_r1)
+    stats2 = seqkit_stats(repaired_r2)
+    if (
+        repair_rc == 0
+        and stats1["seqkit_status"] == "OK"
+        and stats2["seqkit_status"] == "OK"
+        and stats1["reads"]
+        and stats1["reads"] == stats2["reads"]
+    ):
+        out1 = input_for_skmer / (Path(r1).name)
+        out2 = input_for_skmer / (Path(r2).name)
+        link_or_copy(repaired_r1, out1)
+        link_or_copy(repaired_r2, out2)
+        row["r1_reads"] = stats1["reads"]
+        row["r2_reads"] = stats2["reads"]
+        row["r1_bases"] = stats1["bases"]
+        row["r2_bases"] = stats2["bases"]
+        row["r1_avg_len"] = stats1["average_length"]
+        row["r2_avg_len"] = stats2["average_length"]
+        if row["r1_gzip_status"] == "BAD" or row["r2_gzip_status"] == "BAD":
+            row["repair_action"] = "GZIP_BAD_REPAIRED_WARN"
+            row["note"] = "gzip was BAD before repair; repaired output was generated"
+        else:
+            row["repair_action"] = "REPAIRED"
+            row["note"] = "repaired output was generated"
+        row["output_r1"] = str(out1)
+        row["output_r2"] = str(out2)
+    else:
+        row["repair_action"] = "REPAIR_FAILED"
+        row["note"] = "repair.sh failed or repaired R1/R2 counts are unequal"
+    return row
+
+
+def repair_inputs(input_dir, output_dir, samples_text, jobs=1, repair_threads=2):
     output_dir = Path(output_dir).resolve()
     input_dir = Path(input_dir).resolve()
     selected = parse_samples(samples_text)
@@ -310,7 +392,7 @@ def repair_inputs(input_dir, output_dir, samples_text):
         print("ERROR: --samples must include at least one sample name", file=sys.stderr)
         return 2
 
-    _, sample_rows = build_reports(input_dir, output_dir)
+    _, sample_rows = build_reports(input_dir, output_dir, jobs=jobs)
     sample_map = {row["sample"]: row for row in sample_rows}
     _, pairs = discover_fastqs(input_dir)
     log_dir = output_dir / "logs"
@@ -319,83 +401,34 @@ def repair_inputs(input_dir, output_dir, samples_text):
     repaired_dir.mkdir(parents=True, exist_ok=True)
     input_for_skmer.mkdir(parents=True, exist_ok=True)
 
-    post_rows = []
-    for sample in sorted(sample_map):
-        row = dict(sample_map[sample])
-        pair = pairs.get(sample, {})
-        r1 = pair.get("r1")
-        r2 = pair.get("r2")
-        row["repair_action"] = "SKIPPED"
-        row["output_r1"] = ""
-        row["output_r2"] = ""
-
-        if row["suggested_action"] == "USE_AS_IS" and sample not in selected and r1 and r2:
-            out1 = input_for_skmer / Path(r1).name
-            out2 = input_for_skmer / Path(r2).name
-            link_or_copy(r1, out1)
-            link_or_copy(r2, out2)
-            row["repair_action"] = "LINKED_ORIGINAL"
-            row["output_r1"] = str(out1)
-            row["output_r2"] = str(out2)
-            post_rows.append(row)
-            continue
-
-        if sample not in selected:
-            post_rows.append(row)
-            continue
-
-        if not r1 or not r2:
-            row["repair_action"] = "REPAIR_FAILED"
-            row["note"] = "selected for repair but missing R1 or R2"
-            post_rows.append(row)
-            continue
-
-        sana_r1 = repaired_dir / "{}.R1.sana.fq.gz".format(sample)
-        sana_r2 = repaired_dir / "{}.R2.sana.fq.gz".format(sample)
-        repaired_r1 = repaired_dir / "{}.R1.repaired.fq.gz".format(sample)
-        repaired_r2 = repaired_dir / "{}.R2.repaired.fq.gz".format(sample)
-        singletons = repaired_dir / "{}.singletons.fq.gz".format(sample)
-
-        sana_rc = run_sana(r1, sana_r1, log_dir)
-        sana_rc2 = run_sana(r2, sana_r2, log_dir)
-        if sana_rc != 0 or sana_rc2 != 0:
-            row["repair_action"] = "SANA_FAILED"
-            row["note"] = "seqkit sana failed"
-            post_rows.append(row)
-            continue
-
-        repair_rc = run_repair(sana_r1, sana_r2, repaired_r1, repaired_r2, singletons, sample, log_dir)
-        stats1 = seqkit_stats(repaired_r1)
-        stats2 = seqkit_stats(repaired_r2)
-        if (
-            repair_rc == 0
-            and stats1["seqkit_status"] == "OK"
-            and stats2["seqkit_status"] == "OK"
-            and stats1["reads"]
-            and stats1["reads"] == stats2["reads"]
-        ):
-            out1 = input_for_skmer / (Path(r1).name)
-            out2 = input_for_skmer / (Path(r2).name)
-            link_or_copy(repaired_r1, out1)
-            link_or_copy(repaired_r2, out2)
-            row["r1_reads"] = stats1["reads"]
-            row["r2_reads"] = stats2["reads"]
-            row["r1_bases"] = stats1["bases"]
-            row["r2_bases"] = stats2["bases"]
-            row["r1_avg_len"] = stats1["average_length"]
-            row["r2_avg_len"] = stats2["average_length"]
-            if row["r1_gzip_status"] == "BAD" or row["r2_gzip_status"] == "BAD":
-                row["repair_action"] = "GZIP_BAD_REPAIRED_WARN"
-                row["note"] = "gzip was BAD before repair; repaired output was generated"
-            else:
-                row["repair_action"] = "REPAIRED"
-                row["note"] = "repaired output was generated"
-            row["output_r1"] = str(out1)
-            row["output_r2"] = str(out2)
-        else:
-            row["repair_action"] = "REPAIR_FAILED"
-            row["note"] = "repair.sh failed or repaired R1/R2 counts are unequal"
-        post_rows.append(row)
+    jobs = max(1, int(jobs))
+    repair_threads = max(1, int(repair_threads))
+    tasks = [
+        (sample, sample_map[sample])
+        for sample in sorted(sample_map)
+    ]
+    if jobs == 1:
+        post_rows = [
+            repair_one_sample(sample, row, pairs, selected, repaired_dir, input_for_skmer, log_dir, repair_threads)
+            for sample, row in tasks
+        ]
+    else:
+        with ThreadPoolExecutor(max_workers=jobs) as pool:
+            futures = [
+                pool.submit(
+                    repair_one_sample,
+                    sample,
+                    row,
+                    pairs,
+                    selected,
+                    repaired_dir,
+                    input_for_skmer,
+                    log_dir,
+                    repair_threads,
+                )
+                for sample, row in tasks
+            ]
+            post_rows = [future.result() for future in futures]
 
     unknown = sorted(selected - set(sample_map))
     for sample in unknown:
@@ -407,7 +440,7 @@ def repair_inputs(input_dir, output_dir, samples_text):
             "note": "sample name was selected but not found",
         })
 
-    post_file_rows, _ = build_reports(input_for_skmer, output_dir / "post_repair_check")
+    post_file_rows, _ = build_reports(input_for_skmer, output_dir / "post_repair_check", jobs=jobs)
     write_tsv(output_dir / "post_repair_sample_report.tsv", POST_FIELDS, post_rows)
     write_tsv(output_dir / "post_repair_file_report.tsv", FILE_FIELDS, post_file_rows)
     return 0
@@ -415,7 +448,7 @@ def repair_inputs(input_dir, output_dir, samples_text):
 
 def input_check_main(args):
     try:
-        build_reports(args.input, args.output)
+        build_reports(args.input, args.output, jobs=args.jobs)
     except RuntimeError as exc:
         print("ERROR: {}".format(exc), file=sys.stderr)
         return 127
@@ -430,7 +463,7 @@ def input_repair_main(args):
         print("ERROR: repair.sh was not found in PATH", file=sys.stderr)
         return 127
     try:
-        rc = repair_inputs(args.input, args.output, args.samples)
+        rc = repair_inputs(args.input, args.output, args.samples, jobs=args.jobs, repair_threads=args.repair_threads)
     except RuntimeError as exc:
         print("ERROR: {}".format(exc), file=sys.stderr)
         return 127

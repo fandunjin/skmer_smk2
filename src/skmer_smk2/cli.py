@@ -217,6 +217,14 @@ def run(args):
         "bbmerge_timeout={}".format(args.bbmerge_timeout),
         "skmer_sketch_size={}".format(args.skmer_sketch_size),
         "skmer_threads={}".format(args.skmer_threads),
+        "fastp_threads={}".format(args.fastp_threads),
+        "bowtie2_threads={}".format(args.bowtie2_threads),
+        "repair_threads={}".format(args.repair_threads),
+        "bbmerge_threads={}".format(args.bbmerge_threads),
+        "fastp_mem_mb={}".format(args.fastp_mem_mb),
+        "bowtie2_mem_mb={}".format(args.bowtie2_mem_mb),
+        "repair_mem_mb={}".format(args.repair_mem_mb),
+        "bbmerge_mem_mb={}".format(args.bbmerge_mem_mb),
     ]
     tool_dirs = []
     for tool in REQUIRED_TOOLS:
@@ -230,6 +238,8 @@ def run(args):
             cmd.append("{}={}".format(config_key, path))
     if ref_path:
         cmd.append("ref={}".format(ref_path))
+    if args.total_mem_mb:
+        cmd.extend(["--resources", "mem_mb={}".format(args.total_mem_mb)])
     if args.dry_run:
         cmd.append("--dry-run")
     if args.printshellcmds:
@@ -419,6 +429,15 @@ def build_parser():
     p_run.add_argument("--bbmerge-timeout", type=int, default=14400, help="Seconds to wait for each BBMerge job before using unmerged-read fallback. Use 0 to disable.")
     p_run.add_argument("--skmer-sketch-size", type=int, default=100000, help="Skmer sketch size passed to `skmer reference/subsample -s`. Lower values reduce memory use.")
     p_run.add_argument("--skmer-threads", type=int, default=16, help="Threads used inside Skmer reference/subsample steps.")
+    p_run.add_argument("--fastp-threads", type=int, default=4, help="Threads per fastp sample job.")
+    p_run.add_argument("--bowtie2-threads", type=int, default=2, help="Threads per Bowtie2 filtering sample job.")
+    p_run.add_argument("--repair-threads", type=int, default=2, help="Threads per repair.sh sample job.")
+    p_run.add_argument("--bbmerge-threads", type=int, default=2, help="Threads per BBMerge sample job.")
+    p_run.add_argument("--fastp-mem-mb", type=int, default=2000, help="Snakemake mem_mb resource per fastp job.")
+    p_run.add_argument("--bowtie2-mem-mb", type=int, default=4000, help="Snakemake mem_mb resource per Bowtie2 filtering job.")
+    p_run.add_argument("--repair-mem-mb", type=int, default=4000, help="Snakemake mem_mb resource per repair.sh job.")
+    p_run.add_argument("--bbmerge-mem-mb", type=int, default=4000, help="Snakemake mem_mb resource per BBMerge job.")
+    p_run.add_argument("--total-mem-mb", default="", help="Optional total Snakemake mem_mb resource limit for scheduling.")
     p_run.add_argument("--workdir", default=".", help="Run directory for results and workflow cache.")
     p_run.add_argument("--latency-wait", default="120", help="Snakemake latency wait seconds.")
     p_run.add_argument("--dry-run", action="store_true", help="Run Snakemake in dry-run mode.")
@@ -450,12 +469,15 @@ def build_parser():
     p_input_check = sub.add_parser("input-check", help="Check paired FASTQ inputs and write detailed reports.")
     p_input_check.add_argument("-i", "--input", required=True, help="Directory containing raw FASTQ files.")
     p_input_check.add_argument("-o", "--output", default="input_qc", help="Output directory for input QC reports.")
+    p_input_check.add_argument("-j", "--jobs", type=int, default=1, help="Parallel FASTQ files to check at once.")
     p_input_check.set_defaults(func=input_check_main)
 
     p_input_repair = sub.add_parser("input-repair", help="Repair selected samples by sample name.")
     p_input_repair.add_argument("-i", "--input", required=True, help="Directory containing raw FASTQ files.")
     p_input_repair.add_argument("-o", "--output", default="input_qc", help="Output directory for repair reports and input_for_skmer.")
     p_input_repair.add_argument("--samples", required=True, help="Comma- or whitespace-separated sample names to repair.")
+    p_input_repair.add_argument("-j", "--jobs", type=int, default=1, help="Parallel samples to repair or link at once.")
+    p_input_repair.add_argument("--repair-threads", type=int, default=2, help="Threads passed to repair.sh for each repaired sample.")
     p_input_repair.set_defaults(func=input_repair_main)
 
     return parser

@@ -13,6 +13,14 @@ candidate_percentiles = str(config.get("candidate_percentiles", "50,60,70,75,80,
 bbmerge_timeout = int(config.get("bbmerge_timeout", 14400))
 skmer_sketch_size = int(config.get("skmer_sketch_size", 100000))
 skmer_threads = int(config.get("skmer_threads", 16))
+fastp_threads = int(config.get("fastp_threads", 4))
+bowtie2_threads = int(config.get("bowtie2_threads", 2))
+repair_threads = int(config.get("repair_threads", 2))
+bbmerge_threads = int(config.get("bbmerge_threads", 2))
+fastp_mem_mb = int(config.get("fastp_mem_mb", 2000))
+bowtie2_mem_mb = int(config.get("bowtie2_mem_mb", 4000))
+repair_mem_mb = int(config.get("repair_mem_mb", 4000))
+bbmerge_mem_mb = int(config.get("bbmerge_mem_mb", 4000))
 analysis_tokens = [
     token.lower()
     for token in re.split(r"[,\s]+", str(config.get("analyses", "skmer,waster,mash")).strip())
@@ -203,7 +211,9 @@ rule fastp:
         html="results/{sample}/clean/{sample}.fastp.html"
     log:
         "results/{sample}/clean/{sample}.fastp.log"
-    threads: 8
+    threads: fastp_threads
+    resources:
+        mem_mb=fastp_mem_mb
     shell:
         """
         mkdir -p results/{wildcards.sample}/clean
@@ -239,7 +249,9 @@ rule bowtie2_filter:
         r1="results/{sample}/nDNA/un-conc-mate.1.fq.gz",
         r2="results/{sample}/nDNA/un-conc-mate.2.fq.gz",
         sam="results/{sample}/nDNA/{sample}.sam"
-    threads: 48
+    threads: bowtie2_threads
+    resources:
+        mem_mb=bowtie2_mem_mb
     shell:
         """
         mkdir -p results/{wildcards.sample}/nDNA
@@ -258,12 +270,14 @@ rule repair_pairs:
         r1="results/{sample}/nDNA/un-conc-mate.1.fixed.fq.gz",
         r2="results/{sample}/nDNA/un-conc-mate.2.fixed.fq.gz",
         single="results/{sample}/nDNA/singletons.fq.gz"
-    threads: 4
+    threads: repair_threads
+    resources:
+        mem_mb=repair_mem_mb
     shell:
         """
         {TOOL_REPAIR} in1={input.r1} in2={input.r2} \
                   out1={output.r1} out2={output.r2} outs={output.single} \
-                  overwrite=t -Xmx4g threads={threads}
+                  overwrite=t -Xmx{resources.mem_mb}m threads={threads}
         """
 
 
@@ -277,7 +291,9 @@ rule bbmerge:
         unmerged2="results/{sample}/sample_unmerged2.fq"
     log:
         "results/{sample}/bbmerge.log"
-    threads: 4
+    threads: bbmerge_threads
+    resources:
+        mem_mb=bbmerge_mem_mb
     shell:
         """
         {TOOL_PYTHON} {SCRIPT_BBMERGE_OR_FALLBACK} \

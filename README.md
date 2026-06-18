@@ -6,9 +6,10 @@ reference-based plastid filtering, base-aware depth normalization, and tree
 inference with Skmer, WASTER, and Mash.
 
 ```bash
-skmer-smk2 input-check -i RAW_FASTQ_DIR -o input_qc
-skmer-smk2 input-repair -i RAW_FASTQ_DIR -o input_qc --samples "sampleA sampleB"
-skmer-smk2 run -i input_qc/input_for_skmer -ref REF_FASTA -s 75 -j 48
+skmer-smk2 input-check -i RAW_FASTQ_DIR -o input_qc -j 12
+skmer-smk2 input-repair -i RAW_FASTQ_DIR -o input_qc --samples "sampleA sampleB" -j 4
+skmer-smk2 run -i input_qc/input_for_skmer -ref REF_FASTA -s 75 -j 48 \
+  --bowtie2-threads 2 --fastp-threads 4 --repair-threads 2 --bbmerge-threads 2
 ```
 
 The same commands can be used on a local workstation or inside HPC scheduler
@@ -174,8 +175,12 @@ and review the report, then repair only the sample names you choose.
 Step 1: check input data.
 
 ```bash
-skmer-smk2 input-check -i /path/to/raw_fastq -o input_qc
+skmer-smk2 input-check -i /path/to/raw_fastq -o input_qc -j 12
 ```
+
+`-j/--jobs` controls how many FASTQ files are checked at the same time. The
+default is `1` to be gentle on shared filesystems. On HPC nodes, `-j 8` to
+`-j 16` is usually a practical starting point.
 
 Main check outputs:
 
@@ -222,15 +227,19 @@ Step 2: repair selected samples by name.
 
 ```bash
 skmer-smk2 input-repair -i /path/to/raw_fastq -o input_qc \
-  --samples "sampleA sampleB"
+  --samples "sampleA sampleB" -j 4 --repair-threads 2
 ```
 
 Comma-separated names are also accepted:
 
 ```bash
 skmer-smk2 input-repair -i /path/to/raw_fastq -o input_qc \
-  --samples sampleA,sampleB
+  --samples sampleA,sampleB -j 4 --repair-threads 2
 ```
+
+For `input-repair`, `-j/--jobs` controls how many selected samples are repaired
+or linked at the same time. `--repair-threads` controls how many threads each
+`repair.sh` process uses.
 
 Repair outputs:
 
@@ -272,7 +281,11 @@ Run the main analysis on the checked/repaired input directory.
 With reference filtering:
 
 ```bash
-skmer-smk2 run -i input_qc/input_for_skmer -ref /path/to/ref.fasta -s 75 -j 48
+skmer-smk2 run -i input_qc/input_for_skmer -ref /path/to/ref.fasta -s 75 -j 48 \
+  --bowtie2-threads 2 \
+  --fastp-threads 4 \
+  --repair-threads 2 \
+  --bbmerge-threads 2
 ```
 
 Without reference filtering:
@@ -285,7 +298,13 @@ You can still run directly on a raw FASTQ directory if you intentionally skip
 the input-check step:
 
 ```bash
-skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48
+skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48 \
+  --bowtie2-threads 2 \
+  --fastp-threads 4 \
+  --repair-threads 2 \
+  --bbmerge-threads 2 \
+  --total-mem-mb 180000 \
+  --bowtie2-mem-mb 6000
 ```
 
 Run only selected analysis branches:
@@ -345,10 +364,62 @@ skmer-smk2 run -i /path/to/fastq_dir -s 75 -j 48 -- --keep-going
 | `--bbmerge-timeout` | Seconds to wait for each BBMerge job before fallback; default `14400`, use `0` to disable |
 | `--skmer-sketch-size` | Skmer `-s` sketch size for `reference` and `subsample`; default `100000` |
 | `--skmer-threads` | Threads used inside Skmer reference/subsample steps; default `16` |
+| `--fastp-threads` | Threads per sample for `fastp`; default `4` |
+| `--bowtie2-threads` | Threads per sample for Bowtie2 filtering; default `2` |
+| `--repair-threads` | Threads per sample for `repair.sh`; default `2` |
+| `--bbmerge-threads` | Threads per sample for `bbmerge.sh`; default `2` |
+| `--fastp-mem-mb` | Snakemake memory resource per `fastp` job; default `2000` |
+| `--bowtie2-mem-mb` | Snakemake memory resource per Bowtie2 filtering job; default `4000` |
+| `--repair-mem-mb` | Snakemake memory resource per `repair.sh` job; default `4000` |
+| `--bbmerge-mem-mb` | Snakemake memory resource per `bbmerge.sh` job; default `4000` |
+| `--total-mem-mb` | Optional total Snakemake `mem_mb` scheduling limit |
 | `--workdir` | Directory where `results/` and workflow cache are written; default current directory |
 | `--latency-wait` | Snakemake latency wait seconds; default `120` |
 | `--dry-run` | Build and print the DAG without running jobs |
 | `--printshellcmds` | Print shell commands from Snakemake |
+
+## Per-Sample Parallelism And Memory Scheduling
+
+`-j/--jobs` is the total Snakemake core budget. The per-step thread options
+control how many cores each sample job consumes. This means:
+
+```bash
+skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48 \
+  --bowtie2-threads 2
+```
+
+can schedule roughly 24 Bowtie2 sample jobs at the same time, instead of giving
+one sample all 48 cores. This is usually faster for many-sample datasets because
+Bowtie2 plastid filtering often does not scale efficiently to very high thread
+counts for a single sample.
+
+Recommended high-parallel reference-filtering command:
+
+```bash
+skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48 \
+  --bowtie2-threads 2 \
+  --fastp-threads 4 \
+  --repair-threads 2 \
+  --bbmerge-threads 2 \
+  --total-mem-mb 180000 \
+  --bowtie2-mem-mb 6000 \
+  --printshellcmds
+```
+
+If memory pressure is high, lower the total scheduling limit or increase the
+per-job memory estimate so Snakemake runs fewer samples at once:
+
+```bash
+skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48 \
+  --bowtie2-threads 2 \
+  --total-mem-mb 96000 \
+  --bowtie2-mem-mb 8000
+```
+
+`--total-mem-mb` is a Snakemake scheduling resource. It limits how many jobs are
+started together, but it is not a hard memory cap enforced by the operating
+system or scheduler. Real memory allocation still depends on the HPC job request
+and the programs themselves.
 
 ## How `-ref` Works
 
@@ -455,7 +526,13 @@ environment, and put the same `skmer-smk2 run` command in the script body. For
 example, after your scheduler headers and environment activation:
 
 ```bash
-skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48
+skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48 \
+  --bowtie2-threads 2 \
+  --fastp-threads 4 \
+  --repair-threads 2 \
+  --bbmerge-threads 2 \
+  --total-mem-mb 180000 \
+  --bowtie2-mem-mb 6000
 ```
 
 Submit the script with your cluster's scheduler command. The workflow itself is
