@@ -374,6 +374,7 @@ skmer-smk2 run -i /path/to/fastq_dir -s 75 -j 48 -- --keep-going
 | `--bbmerge-mem-mb` | Snakemake memory resource per `bbmerge.sh` job; default `4000` |
 | `--total-mem-mb` | Optional total Snakemake `mem_mb` scheduling limit |
 | `--workdir` | Directory where `results/` and workflow cache are written; default current directory |
+| `--scheduler` | Snakemake scheduler; default `greedy`, use `ilp` only if CBC/ILP solver is installed |
 | `--latency-wait` | Snakemake latency wait seconds; default `120` |
 | `--dry-run` | Build and print the DAG without running jobs |
 | `--printshellcmds` | Print shell commands from Snakemake |
@@ -776,6 +777,21 @@ one of the supported R1/R2 naming styles.
 
 Bowtie2 filtering only runs when `-ref REF_FASTA` is provided. If `-ref` is
 omitted, the workflow intentionally skips the reference-removal branch.
+
+### PULP_CBC_CMD Or ILP Solver Warning
+
+Older runs may print:
+
+```text
+Failed to solve scheduling problem with ILP solver, falling back to greedy scheduler
+PULP_CBC_CMD: Not Available
+```
+
+This is a Snakemake scheduling warning, not a biological analysis error. It
+means the optional CBC/ILP solver is unavailable, so Snakemake falls back to the
+greedy scheduler. Current `skmer-smk2` uses `--scheduler greedy` by default to
+avoid this warning. Use `--scheduler ilp` only if your environment has a working
+CBC solver.
 
 ### Missing External Tool
 

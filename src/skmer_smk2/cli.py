@@ -205,6 +205,8 @@ def run(args):
         "--cores",
         str(args.jobs),
         "--rerun-incomplete",
+        "--scheduler",
+        args.scheduler,
         "--latency-wait",
         str(args.latency_wait),
         "--config",
@@ -439,6 +441,7 @@ def build_parser():
     p_run.add_argument("--bbmerge-mem-mb", type=int, default=4000, help="Snakemake mem_mb resource per BBMerge job.")
     p_run.add_argument("--total-mem-mb", default="", help="Optional total Snakemake mem_mb resource limit for scheduling.")
     p_run.add_argument("--workdir", default=".", help="Run directory for results and workflow cache.")
+    p_run.add_argument("--scheduler", default="greedy", choices=("greedy", "ilp"), help="Snakemake scheduler. Default: greedy, which avoids requiring the CBC/ILP solver.")
     p_run.add_argument("--latency-wait", default="120", help="Snakemake latency wait seconds.")
     p_run.add_argument("--dry-run", action="store_true", help="Run Snakemake in dry-run mode.")
     p_run.add_argument("--printshellcmds", action="store_true", help="Print shell commands from Snakemake.")
