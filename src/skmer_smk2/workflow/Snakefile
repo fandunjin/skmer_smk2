@@ -13,14 +13,17 @@ candidate_percentiles = str(config.get("candidate_percentiles", "50,60,70,75,80,
 bbmerge_timeout = int(config.get("bbmerge_timeout", 14400))
 skmer_sketch_size = int(config.get("skmer_sketch_size", 100000))
 skmer_threads = int(config.get("skmer_threads", 16))
+skmer_mem_mb = int(config.get("skmer_mem_mb", 120000))
 fastp_threads = int(config.get("fastp_threads", 4))
 bowtie2_threads = int(config.get("bowtie2_threads", 2))
 repair_threads = int(config.get("repair_threads", 2))
 bbmerge_threads = int(config.get("bbmerge_threads", 2))
+waster_threads = int(config.get("waster_threads", 4))
 fastp_mem_mb = int(config.get("fastp_mem_mb", 2000))
 bowtie2_mem_mb = int(config.get("bowtie2_mem_mb", 4000))
 repair_mem_mb = int(config.get("repair_mem_mb", 4000))
 bbmerge_mem_mb = int(config.get("bbmerge_mem_mb", 4000))
+waster_mem_mb = int(config.get("waster_mem_mb", 120000))
 analysis_tokens = [
     token.lower()
     for token in re.split(r"[,\s]+", str(config.get("analyses", "skmer,waster,mash")).strip())
@@ -95,6 +98,7 @@ def input_fastq_preview(limit=20):
 PAIRS = discover_samples()
 SAMPLES = list(PAIRS)
 USE_REF = bool(ref_path)
+REF_SUFFIX = ".ref" if USE_REF else ""
 SAMPLE_ARGS = " ".join(shlex.quote(sample) for sample in SAMPLES)
 TOOL_PYTHON = shlex.quote(str(config.get("tool_python", "python")))
 TOOL_FASTP = shlex.quote(str(config.get("tool_fastp", "fastp")))
@@ -151,13 +155,23 @@ def bowtie_index_files():
     return expand("results/ref/refDNA.{ext}", ext=["1.bt2", "2.bt2", "3.bt2", "4.bt2", "rev.1.bt2", "rev.2.bt2"])
 
 
-COMMON_OUTPUTS = [
+def ref_output(path):
+    if not REF_SUFFIX:
+        return path
+    base, ext = os.path.splitext(path)
+    return "{}{}{}".format(base, REF_SUFFIX, ext)
+
+
+COMMON_PRIMARY_OUTPUTS = [
     "results/stats/post_filter_summary.sorted.tsv",
     "results/stats/head_cutoff_candidates.tsv",
     "results/stats/head_summary.sorted.tsv",
+]
+COMMON_OUTPUTS = [
+    ref_output(path) for path in COMMON_PRIMARY_OUTPUTS
 ] + expand("results/{sample}/nDNAOK/{sample}.fq", sample=SAMPLES)
 
-ANALYSIS_OUTPUTS = {
+ANALYSIS_PRIMARY_OUTPUTS = {
     "skmer": [
         "results/skmer/tree.direct.tre",
         "results/skmer/tree.bootstrap.tre",
@@ -174,6 +188,17 @@ ANALYSIS_OUTPUTS = {
         "results/mash/distance_heatmap.svg",
     ],
 }
+ANALYSIS_OUTPUTS = {
+    analysis: [ref_output(path) for path in outputs]
+    for analysis, outputs in ANALYSIS_PRIMARY_OUTPUTS.items()
+}
+
+REF_ALIAS_INPUTS = list(COMMON_PRIMARY_OUTPUTS)
+REF_ALIAS_OUTPUTS = [ref_output(path) for path in COMMON_PRIMARY_OUTPUTS]
+for analysis in ("skmer", "waster", "mash"):
+    if analysis in selected_analyses:
+        REF_ALIAS_INPUTS.extend(ANALYSIS_PRIMARY_OUTPUTS[analysis])
+        REF_ALIAS_OUTPUTS.extend(ANALYSIS_OUTPUTS[analysis])
 
 FINAL_OUTPUTS = list(COMMON_OUTPUTS)
 for analysis in ("skmer", "waster", "mash"):
@@ -198,6 +223,18 @@ migrate_legacy_mash_outputs()
 rule all:
     input:
         FINAL_OUTPUTS
+
+
+if USE_REF:
+    rule ref_suffixed_final_outputs:
+        input:
+            REF_ALIAS_INPUTS
+        output:
+            REF_ALIAS_OUTPUTS
+        run:
+            for src, dst in zip(input, output):
+                os.makedirs(os.path.dirname(str(dst)), exist_ok=True)
+                shutil.copyfile(str(src), str(dst))
 
 
 rule fastp:
@@ -407,6 +444,8 @@ rule skmer_reference:
     log:
         "results/skmer/logs/reference.log"
     threads: skmer_threads
+    resources:
+        mem_mb=skmer_mem_mb
     shell:
         """
         mkdir -p results/skmer {params.logdir}
@@ -437,6 +476,8 @@ rule skmer_subsample:
     log:
         "results/skmer/logs/subsample.log"
     threads: skmer_threads
+    resources:
+        mem_mb=skmer_mem_mb
     shell:
         """
         mkdir -p {params.logdir}
@@ -551,7 +592,9 @@ rule waster_tree:
         "results/waster/input.tsv"
     output:
         "results/waster/waster.tree"
-    threads: 16
+    threads: waster_threads
+    resources:
+        mem_mb=waster_mem_mb
     shell:
         "mkdir -p results/waster && {TOOL_WASTER} -C -t {threads} -i {input} -o {output}"
 
@@ -564,7 +607,9 @@ rule waster_branchlength:
         "results/waster/waster.branchlength.tree"
     log:
         "results/waster/waster_branchlength.log"
-    threads: 16
+    threads: waster_threads
+    resources:
+        mem_mb=waster_mem_mb
     shell:
         """
         {TOOL_WASTER_BRANCHLENGTH} -C \

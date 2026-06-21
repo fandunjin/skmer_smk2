@@ -364,14 +364,17 @@ skmer-smk2 run -i /path/to/fastq_dir -s 75 -j 48 -- --keep-going
 | `--bbmerge-timeout` | Seconds to wait for each BBMerge job before fallback; default `14400`, use `0` to disable |
 | `--skmer-sketch-size` | Skmer `-s` sketch size for `reference` and `subsample`; default `100000` |
 | `--skmer-threads` | Threads used inside Skmer reference/subsample steps; default `16` |
+| `--skmer-mem-mb` | Snakemake memory resource for Skmer reference/subsample jobs; default `120000` |
 | `--fastp-threads` | Threads per sample for `fastp`; default `4` |
 | `--bowtie2-threads` | Threads per sample for Bowtie2 filtering; default `2` |
 | `--repair-threads` | Threads per sample for `repair.sh`; default `2` |
 | `--bbmerge-threads` | Threads per sample for `bbmerge.sh`; default `2` |
+| `--waster-threads` | Threads used by WASTER and `waster_branchlength`; default `4` |
 | `--fastp-mem-mb` | Snakemake memory resource per `fastp` job; default `2000` |
 | `--bowtie2-mem-mb` | Snakemake memory resource per Bowtie2 filtering job; default `4000` |
 | `--repair-mem-mb` | Snakemake memory resource per `repair.sh` job; default `4000` |
 | `--bbmerge-mem-mb` | Snakemake memory resource per `bbmerge.sh` job; default `4000` |
+| `--waster-mem-mb` | Snakemake memory resource for WASTER and `waster_branchlength`; default `120000` |
 | `--total-mem-mb` | Optional total Snakemake `mem_mb` scheduling limit |
 | `--workdir` | Directory where `results/` and workflow cache are written; default current directory |
 | `--scheduler` | Snakemake scheduler; default `greedy`, use `ilp` only if CBC/ILP solver is installed |
@@ -562,6 +565,21 @@ results/mash/tree.bootstrap.tre
 results/mash/tree.merged.tre
 results/mash/distance_heatmap.svg
 ```
+
+When `-ref REF_FASTA` is used, the workflow also writes the final report/tree
+files with a `.ref` suffix, for example:
+
+```text
+results/stats/head_summary.sorted.ref.tsv
+results/skmer/tree.merged.ref.tre
+results/waster/waster.branchlength.ref.tree
+results/mash/tree.merged.ref.tre
+results/mash/distance_heatmap.ref.svg
+```
+
+The unsuffixed files remain available as workflow intermediates and for
+compatibility with earlier runs. The `.ref` files are the final outputs to use
+when you want filenames to show that reference/plastid filtering was applied.
 
 When `-skmer`, `-waster`, or `-mash` is used, only the selected analysis outputs
 are required by the final workflow target. Shared preprocessing and statistics
@@ -816,13 +834,30 @@ internal thread count:
 
 ```bash
 skmer-smk2 run -i /path/to/fastq_dir -s 75 -j 48 \
-  --skmer-sketch-size 50000 --skmer-threads 8
+  --skmer-sketch-size 50000 --skmer-threads 8 --skmer-mem-mb 180000
 ```
 
 The default is `--skmer-sketch-size 100000 --skmer-threads 16`, matching the
 original workflow. Smaller sketch sizes reduce memory and runtime pressure but
 may slightly reduce Skmer distance resolution. Inspect
 `results/skmer/logs/reference.log` for the detailed Skmer message.
+
+### WASTER Is Killed With Exit Status 137
+
+Exit status `137` usually means the scheduler or operating system killed WASTER
+because memory was exhausted. For large datasets, run WASTER with fewer threads
+and a larger memory scheduling estimate:
+
+```bash
+skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48 -waster \
+  --waster-threads 2 \
+  --waster-mem-mb 220000 \
+  --total-mem-mb 240000
+```
+
+If the node still kills the job, request more memory from the scheduler, reduce
+`--waster-threads` to `1`, or run only `-skmer -mash` first and run WASTER later
+in a larger-memory job. WASTER is independent of the Skmer and Mash final trees.
 
 ### fastp Fails For One Sample
 

@@ -219,14 +219,17 @@ def run(args):
         "bbmerge_timeout={}".format(args.bbmerge_timeout),
         "skmer_sketch_size={}".format(args.skmer_sketch_size),
         "skmer_threads={}".format(args.skmer_threads),
+        "skmer_mem_mb={}".format(args.skmer_mem_mb),
         "fastp_threads={}".format(args.fastp_threads),
         "bowtie2_threads={}".format(args.bowtie2_threads),
         "repair_threads={}".format(args.repair_threads),
         "bbmerge_threads={}".format(args.bbmerge_threads),
+        "waster_threads={}".format(args.waster_threads),
         "fastp_mem_mb={}".format(args.fastp_mem_mb),
         "bowtie2_mem_mb={}".format(args.bowtie2_mem_mb),
         "repair_mem_mb={}".format(args.repair_mem_mb),
         "bbmerge_mem_mb={}".format(args.bbmerge_mem_mb),
+        "waster_mem_mb={}".format(args.waster_mem_mb),
     ]
     tool_dirs = []
     for tool in REQUIRED_TOOLS:
@@ -431,14 +434,17 @@ def build_parser():
     p_run.add_argument("--bbmerge-timeout", type=int, default=14400, help="Seconds to wait for each BBMerge job before using unmerged-read fallback. Use 0 to disable.")
     p_run.add_argument("--skmer-sketch-size", type=int, default=100000, help="Skmer sketch size passed to `skmer reference/subsample -s`. Lower values reduce memory use.")
     p_run.add_argument("--skmer-threads", type=int, default=16, help="Threads used inside Skmer reference/subsample steps.")
+    p_run.add_argument("--skmer-mem-mb", type=int, default=120000, help="Snakemake mem_mb resource for Skmer reference/subsample jobs.")
     p_run.add_argument("--fastp-threads", type=int, default=4, help="Threads per fastp sample job.")
     p_run.add_argument("--bowtie2-threads", type=int, default=2, help="Threads per Bowtie2 filtering sample job.")
     p_run.add_argument("--repair-threads", type=int, default=2, help="Threads per repair.sh sample job.")
     p_run.add_argument("--bbmerge-threads", type=int, default=2, help="Threads per BBMerge sample job.")
+    p_run.add_argument("--waster-threads", type=int, default=4, help="Threads used by WASTER and waster_branchlength jobs.")
     p_run.add_argument("--fastp-mem-mb", type=int, default=2000, help="Snakemake mem_mb resource per fastp job.")
     p_run.add_argument("--bowtie2-mem-mb", type=int, default=4000, help="Snakemake mem_mb resource per Bowtie2 filtering job.")
     p_run.add_argument("--repair-mem-mb", type=int, default=4000, help="Snakemake mem_mb resource per repair.sh job.")
     p_run.add_argument("--bbmerge-mem-mb", type=int, default=4000, help="Snakemake mem_mb resource per BBMerge job.")
+    p_run.add_argument("--waster-mem-mb", type=int, default=120000, help="Snakemake mem_mb resource for WASTER and waster_branchlength jobs.")
     p_run.add_argument("--total-mem-mb", default="", help="Optional total Snakemake mem_mb resource limit for scheduling.")
     p_run.add_argument("--workdir", default=".", help="Run directory for results and workflow cache.")
     p_run.add_argument("--scheduler", default="greedy", choices=("greedy", "ilp"), help="Snakemake scheduler. Default: greedy, which avoids requiring the CBC/ILP solver.")
