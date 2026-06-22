@@ -309,6 +309,12 @@ skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48 \
 
 Run only selected analysis branches:
 
+Shared preprocessing only:
+
+```bash
+skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48 -prep
+```
+
 Mash only:
 
 ```bash
@@ -324,10 +330,13 @@ skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48 -skmer 
 WASTER only:
 
 ```bash
-skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48 -waster
+skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 1 -waster \
+  --waster-threads 1 --waster-mem-mb 220000 --total-mem-mb 240000
 ```
 
-If none of `-skmer`, `-waster`, or `-mash` is supplied, all three branches run.
+If none of `-prep`, `-skmer`, `-waster`, or `-mash` is supplied, all three
+analysis branches run after preprocessing. `-prep` runs only the shared
+preprocessing and base-aware head outputs.
 
 Preview the workflow without running jobs:
 
@@ -355,6 +364,7 @@ skmer-smk2 run -i /path/to/fastq_dir -s 75 -j 48 -- --keep-going
 | `-ref`, `--ref` | Optional reference FASTA used for Bowtie2 filtering |
 | `-s`, `--sample-percentile` | Percentile position used to choose the base-count cutoff; default `75` |
 | `--candidate-percentiles` | Percentiles included in the cutoff selection report; default `50,60,70,75,80,90,95` |
+| `-prep` | Run only shared preprocessing, filtering, merging/fallback, statistics, and `nDNAOK` outputs |
 | `-skmer` | Run the Skmer branch |
 | `-waster` | Run the WASTER branch |
 | `-mash` | Run the Mash branch |
@@ -424,6 +434,71 @@ skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48 \
 started together, but it is not a hard memory cap enforced by the operating
 system or scheduler. Real memory allocation still depends on the HPC job request
 and the programs themselves.
+
+## Staged HPC Runs
+
+For large datasets, it is often more efficient to split the workflow into
+separate scheduler jobs while keeping the same `RUN_DIR`. The first job runs
+shared preprocessing with many sample-level jobs in parallel. Later jobs reuse
+those outputs and run only Skmer, Mash, or WASTER.
+
+Export example scripts:
+
+```bash
+skmer-smk2 init -o skmer_smk2_templates
+```
+
+The staged templates are:
+
+```text
+stage_preprocess.sh
+stage_skmer.sh
+stage_mash.sh
+stage_waster.sh
+```
+
+Edit `FASTQ_DIR`, optional `REF_FASTA`, `RUN_DIR`, scheduler headers, and
+environment activation in each script. Use the same `RUN_DIR` for every stage,
+otherwise Snakemake cannot reuse previous outputs.
+
+Recommended order:
+
+```bash
+jsub < stage_preprocess.sh
+jsub < stage_skmer.sh
+jsub < stage_mash.sh
+jsub < stage_waster.sh
+```
+
+Skmer and Mash can be submitted after preprocessing finishes. WASTER can also be
+submitted after preprocessing finishes, but it is commonly the least parallel
+final stage and should usually be requested as a few-core, high-memory job.
+
+### Which Steps Use Few Cores?
+
+These steps can use multiple cores per sample and also run many samples in
+parallel through `-j`: `fastp`, optional Bowtie2 filtering, `repair.sh`,
+`bbmerge.sh`, and Skmer `reference/subsample`.
+
+These steps are mostly single-process but can still use `-j` effectively when
+there are many samples or bootstrap replicates: Mash sketching, Mash bootstrap
+sketching, FastME tree building for bootstrap replicates, and small Python
+conversion/report steps.
+
+These steps are usually one DAG job at a time near the end of a branch:
+`mash paste`, `mash dist`, RAxML consensus, tree merging, WASTER, and
+`waster_branchlength`. When only WASTER remains, `-j 48` will not make it use
+48 cores. In that case, run `-waster` separately with low scheduler cores and
+enough memory, for example:
+
+```bash
+skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 \
+  -j 1 -waster \
+  --waster-threads 1 \
+  --waster-mem-mb 220000 \
+  --total-mem-mb 240000 \
+  --printshellcmds
+```
 
 ## How `-ref` Works
 

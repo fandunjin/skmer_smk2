@@ -30,10 +30,10 @@ analysis_tokens = [
     if token
 ]
 selected_analyses = set(analysis_tokens) or {"skmer", "waster", "mash"}
-valid_analyses = {"skmer", "waster", "mash"}
+valid_analyses = {"prep", "skmer", "waster", "mash"}
 invalid_analyses = selected_analyses - valid_analyses
 if invalid_analyses:
-    raise ValueError("Invalid analyses selected: {}. Valid choices: skmer,waster,mash".format(
+    raise ValueError("Invalid analyses selected: {}. Valid choices: prep,skmer,waster,mash".format(
         ",".join(sorted(invalid_analyses))
     ))
 exclude_samples = set(

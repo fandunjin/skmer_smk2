@@ -170,6 +170,8 @@ def snakemake_command():
 
 
 def selected_analyses(args):
+    if args.prep:
+        return ["prep"]
     selected = []
     if args.skmer:
         selected.append("skmer")
@@ -382,6 +384,10 @@ def init(args):
     shutil.copyfile(resource_path("templates", "scan_repair_fastq.sh"), outdir / "scan_repair_fastq.sh")
     shutil.copyfile(resource_path("templates", "scan_repair_fastq_hpc.sh"), outdir / "scan_repair_fastq_hpc.sh")
     shutil.copyfile(resource_path("templates", "submit_example.sh"), outdir / "submit_example.sh")
+    shutil.copyfile(resource_path("templates", "stage_preprocess.sh"), outdir / "stage_preprocess.sh")
+    shutil.copyfile(resource_path("templates", "stage_skmer.sh"), outdir / "stage_skmer.sh")
+    shutil.copyfile(resource_path("templates", "stage_mash.sh"), outdir / "stage_mash.sh")
+    shutil.copyfile(resource_path("templates", "stage_waster.sh"), outdir / "stage_waster.sh")
     print("Wrote templates to {}".format(outdir))
     return 0
 
@@ -428,6 +434,7 @@ def build_parser():
     p_run.add_argument("-skmer", action="store_true", help="Run the Skmer branch. If no branch is selected, all branches run.")
     p_run.add_argument("-waster", action="store_true", help="Run the WASTER branch. If no branch is selected, all branches run.")
     p_run.add_argument("-mash", action="store_true", help="Run the Mash branch. If no branch is selected, all branches run.")
+    p_run.add_argument("-prep", action="store_true", help="Run only shared preprocessing, filtering, merge/fallback, statistics, and base-aware head outputs.")
     p_run.add_argument("-j", "--jobs", default="1", help="Snakemake job count/cores.")
     p_run.add_argument("-b", "--bootstraps", type=int, default=100, help="Bootstrap replicate count.")
     p_run.add_argument("--exclude-samples", default="", help="Comma- or whitespace-separated sample names to skip.")
