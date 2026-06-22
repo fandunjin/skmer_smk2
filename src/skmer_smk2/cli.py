@@ -103,9 +103,27 @@ def resource_path(*parts):
 def copy_tree(src, dst):
     src = Path(src)
     dst = Path(dst)
-    if dst.exists():
-        shutil.rmtree(dst)
-    shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    if sys.version_info >= (3, 8):
+        shutil.copytree(
+            src,
+            dst,
+            dirs_exist_ok=True,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
+        return
+    if not dst.exists():
+        shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        return
+    for item in src.rglob("*"):
+        if "__pycache__" in item.parts or item.suffix == ".pyc":
+            continue
+        relative = item.relative_to(src)
+        target = dst / relative
+        if item.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, target)
 
 
 def materialize_workflow(workdir):

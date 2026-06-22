@@ -69,6 +69,11 @@ Use the same `RUN_DIR` in all four scripts so Snakemake can reuse existing
 outputs. WASTER is usually the least parallel final stage, so the WASTER script
 requests few cores but high memory.
 
+Use `skmer-smk2 >= 0.1.30` when submitting branch-specific jobs at the same
+time. Older versions refreshed `.skmer_smk2_workflow/` by deleting and
+recreating it, which could cause a startup race if two `skmer-smk2 run` commands
+began simultaneously in the same `RUN_DIR`.
+
 ### Mode 3: Check And Repair Inputs First
 
 Use this when FASTQ files may be truncated, gzip-damaged, or have R1/R2 pairing
