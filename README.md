@@ -734,15 +734,15 @@ The most important final files are:
 ```text
 results/stats/head_summary.sorted.tsv
 results/stats/head_cutoff_candidates.tsv
-results/skmer/tree.direct.tre
-results/skmer/tree.bootstrap.tre
-results/skmer/tree.merged.tre
-results/waster/waster.tree
-results/waster/waster.branchlength.tree
-results/mash/tree.direct.tre
-results/mash/tree.bootstrap.tre
-results/mash/tree.merged.tre
-results/mash/distance_heatmap.svg
+results/skmer/Skmer_tree.direct.tre
+results/skmer/Skmer_tree.bootstrap.tre
+results/skmer/Skmer_tree.merged.tre
+results/waster/WASTER_tree.tre
+results/waster/WASTER_tree.branchlength.tre
+results/mash/Mash_tree.direct.tre
+results/mash/Mash_tree.bootstrap.tre
+results/mash/Mash_tree.merged.tre
+results/mash/Mash_distance_heatmap.svg
 ```
 
 When `-ref REF_FASTA` is used, the workflow also writes the final report/tree
@@ -750,15 +750,17 @@ files with a `.ref` suffix, for example:
 
 ```text
 results/stats/head_summary.sorted.ref.tsv
-results/skmer/tree.merged.ref.tre
-results/waster/waster.branchlength.ref.tree
-results/mash/tree.merged.ref.tre
-results/mash/distance_heatmap.ref.svg
+results/skmer/Skmer_tree.merged.ref.tre
+results/waster/WASTER_tree.branchlength.ref.tre
+results/mash/Mash_tree.merged.ref.tre
+results/mash/Mash_distance_heatmap.ref.svg
 ```
 
-The unsuffixed files remain available as workflow intermediates and for
-compatibility with earlier runs. The `.ref` files are the final outputs to use
-when you want filenames to show that reference/plastid filtering was applied.
+The older unprefixed files such as `tree.merged.tre` remain available as
+workflow intermediates and for compatibility with earlier runs. The prefixed
+files are the recommended final outputs to inspect. The `.ref` prefixed files
+are the final outputs to use when you want filenames to show that
+reference/plastid filtering was applied.
 
 When `-skmer`, `-waster`, or `-mash` is used, only the selected analysis outputs
 are required by the final workflow target. Shared preprocessing and statistics
@@ -863,6 +865,9 @@ results/skmer/bootstrap.trees
 results/skmer/tree.direct.tre
 results/skmer/tree.bootstrap.tre
 results/skmer/tree.merged.tre
+results/skmer/Skmer_tree.direct.tre
+results/skmer/Skmer_tree.bootstrap.tre
+results/skmer/Skmer_tree.merged.tre
 ```
 
 `dimtrx_main.txt` is the initial Skmer distance matrix. `dimtrx_main_cor_.txt`
@@ -872,18 +877,24 @@ matrix passed to FastME.
 `logs/reference.log`, `logs/subsample.log`, and `logs/correct.log` capture
 Skmer's detailed output for the three Skmer calculation stages.
 
-`tree.direct.tre` is the direct Skmer/FastME tree from the corrected distance
-matrix.
+`Skmer_tree.direct.tre` is the direct Skmer/FastME tree from the corrected
+distance matrix.
 
-`bootstrap.trees` contains all Skmer replicate trees. `tree.bootstrap.tre` is
-the majority-rule consensus tree produced from those replicate trees. RAxML
+`bootstrap.trees` contains all Skmer replicate trees.
+`Skmer_tree.bootstrap.tre` is the majority-rule consensus tree produced from
+those replicate trees. RAxML
 support annotations are normalized from `:branch[support]` to standard internal
 node labels so common tree viewers do not treat the support value as part of the
 branch length.
 
-`tree.merged.tre` is one Newick tree: the direct Skmer topology with matching
-bootstrap support values copied onto internal nodes. This is the main Skmer tree
-to inspect when you want direct branch lengths and bootstrap support together.
+`Skmer_tree.merged.tre` is one Newick tree: the direct Skmer topology with
+matching bootstrap support values copied onto internal nodes. This is the main
+Skmer tree to inspect when you want direct branch lengths and bootstrap support
+together.
+
+The unprefixed `tree.*.tre` files are kept as workflow-compatible intermediate
+names and contain the same tree content as the corresponding `Skmer_tree.*.tre`
+files.
 
 ### WASTER Outputs
 
@@ -891,6 +902,8 @@ to inspect when you want direct branch lengths and bootstrap support together.
 results/waster/input.tsv
 results/waster/waster.tree
 results/waster/waster.branchlength.tree
+results/waster/WASTER_tree.tre
+results/waster/WASTER_tree.branchlength.tre
 results/waster/waster_branchlength.log
 ```
 
@@ -900,14 +913,17 @@ results/waster/waster_branchlength.log
 sample_name    normalized_fastq_path
 ```
 
-`waster.tree` is the WASTER topology tree inferred from the normalized FASTQ
-files.
+`WASTER_tree.tre` is the WASTER topology tree inferred from the normalized
+FASTQ files.
 
-`waster.branchlength.tree` is produced by `waster_branchlength` using
-`waster.tree` as the fixed topology and the same input FASTQ list to estimate
+`WASTER_tree.branchlength.tre` is produced by `waster_branchlength` using the
+WASTER topology as the fixed topology and the same input FASTQ list to estimate
 branch lengths. This is the WASTER tree to inspect when branch lengths are
 needed. `waster_branchlength.log` records the branch-length estimation command
 output.
+
+The unprefixed `waster.tree` and `waster.branchlength.tree` files are kept as
+workflow-compatible intermediate names.
 
 ### Mash Outputs
 
@@ -921,25 +937,34 @@ results/mash/bootstrap.trees
 results/mash/tree.direct.tre
 results/mash/tree.bootstrap.tre
 results/mash/tree.merged.tre
+results/mash/Mash_distance_heatmap.svg
+results/mash/Mash_tree.direct.tre
+results/mash/Mash_tree.bootstrap.tre
+results/mash/Mash_tree.merged.tre
 ```
 
 `sketches/*.msh` are per-sample Mash sketches. `all.msh` is the merged sketch
 database. `distances.tsv` contains pairwise Mash distances. `distances.phy` is
 the PHYLIP matrix passed to FastME.
 
-`distance_heatmap.svg` visualizes the Mash distance matrix. It is useful for
-checking outliers, unexpected sample similarity, or obvious sample mix-ups.
+`Mash_distance_heatmap.svg` visualizes the Mash distance matrix. It is useful
+for checking outliers, unexpected sample similarity, or obvious sample mix-ups.
 
-`tree.direct.tre` is the direct Mash/FastME tree. `bootstrap.trees` contains
-replicate Mash trees generated from repeated sketches. `tree.bootstrap.tre` is
-the normalized consensus tree. `tree.merged.tre` is one Newick tree with the
-direct Mash topology and matching bootstrap support values on internal nodes.
-This is the main Mash tree to inspect.
+`Mash_tree.direct.tre` is the direct Mash/FastME tree. `bootstrap.trees`
+contains replicate Mash trees generated from repeated sketches.
+`Mash_tree.bootstrap.tre` is the normalized consensus tree.
+`Mash_tree.merged.tre` is one Newick tree with the direct Mash topology and
+matching bootstrap support values on internal nodes. This is the main Mash tree
+to inspect.
 
 Older `skmer-smk2` runs may contain Mash tree files named
 `mash_tree.direct.tre`, `mash_tree.bootstrap.tre`, and `mash_tree.merged.tre`.
 Current versions automatically copy those legacy names to the standard
 `tree.*.tre` names when reusing an existing work directory.
+
+The unprefixed `tree.*.tre` and `distance_heatmap.svg` files are kept as
+workflow-compatible intermediate names and contain the same tree or heatmap
+content as the corresponding `Mash_*` final outputs.
 
 ## Recommended Files To Inspect First
 
@@ -952,15 +977,15 @@ results/<sample>/clean/<sample>.fastp.html
 results/stats/post_filter_summary.sorted.tsv
 results/stats/head_cutoff_candidates.tsv
 results/stats/head_summary.sorted.tsv
-results/mash/distance_heatmap.svg
+results/mash/Mash_distance_heatmap.svg
 ```
 
 Final trees:
 
 ```text
-results/skmer/tree.merged.tre
-results/waster/waster.branchlength.tree
-results/mash/tree.merged.tre
+results/skmer/Skmer_tree.merged.tre
+results/waster/WASTER_tree.branchlength.tre
+results/mash/Mash_tree.merged.tre
 ```
 
 ## Common Issues

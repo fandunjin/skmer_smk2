@@ -188,17 +188,36 @@ ANALYSIS_PRIMARY_OUTPUTS = {
         "results/mash/distance_heatmap.svg",
     ],
 }
+
+ANALYSIS_NAMED_OUTPUTS = {
+    "skmer": [
+        "results/skmer/Skmer_tree.direct.tre",
+        "results/skmer/Skmer_tree.bootstrap.tre",
+        "results/skmer/Skmer_tree.merged.tre",
+    ],
+    "waster": [
+        "results/waster/WASTER_tree.tre",
+        "results/waster/WASTER_tree.branchlength.tre",
+    ],
+    "mash": [
+        "results/mash/Mash_tree.direct.tre",
+        "results/mash/Mash_tree.bootstrap.tre",
+        "results/mash/Mash_tree.merged.tre",
+        "results/mash/Mash_distance_heatmap.svg",
+    ],
+}
 ANALYSIS_OUTPUTS = {
     analysis: [ref_output(path) for path in outputs]
-    for analysis, outputs in ANALYSIS_PRIMARY_OUTPUTS.items()
+    for analysis, outputs in ANALYSIS_NAMED_OUTPUTS.items()
 }
 
 REF_ALIAS_INPUTS = list(COMMON_PRIMARY_OUTPUTS)
 REF_ALIAS_OUTPUTS = [ref_output(path) for path in COMMON_PRIMARY_OUTPUTS]
+SELECTED_ANALYSIS_LIST = [analysis for analysis in ("skmer", "waster", "mash") if analysis in selected_analyses]
 for analysis in ("skmer", "waster", "mash"):
     if analysis in selected_analyses:
-        REF_ALIAS_INPUTS.extend(ANALYSIS_PRIMARY_OUTPUTS[analysis])
-        REF_ALIAS_OUTPUTS.extend(ANALYSIS_OUTPUTS[analysis])
+        REF_ALIAS_INPUTS.extend(ANALYSIS_NAMED_OUTPUTS[analysis])
+        REF_ALIAS_OUTPUTS.extend([ref_output(path) for path in ANALYSIS_NAMED_OUTPUTS[analysis]])
 
 FINAL_OUTPUTS = list(COMMON_OUTPUTS)
 for analysis in ("skmer", "waster", "mash"):
@@ -231,6 +250,18 @@ if USE_REF:
             REF_ALIAS_INPUTS
         output:
             REF_ALIAS_OUTPUTS
+        run:
+            for src, dst in zip(input, output):
+                os.makedirs(os.path.dirname(str(dst)), exist_ok=True)
+                shutil.copyfile(str(src), str(dst))
+
+
+if SELECTED_ANALYSIS_LIST:
+    rule named_analysis_outputs:
+        input:
+            sum((ANALYSIS_PRIMARY_OUTPUTS[analysis] for analysis in SELECTED_ANALYSIS_LIST), [])
+        output:
+            sum((ANALYSIS_NAMED_OUTPUTS[analysis] for analysis in SELECTED_ANALYSIS_LIST), [])
         run:
             for src, dst in zip(input, output):
                 os.makedirs(os.path.dirname(str(dst)), exist_ok=True)
