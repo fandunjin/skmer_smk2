@@ -5,6 +5,75 @@ from paired-end FASTQ reads. It provides one command for read cleaning, optional
 reference-based plastid filtering, base-aware depth normalization, and tree
 inference with Skmer, WASTER, and Mash.
 
+## Recommended Running Modes
+
+Most users should start with one of these modes. The detailed sections below
+explain the same commands more fully.
+
+### Mode 1: Standard Full Run
+
+Use this when the dataset is moderate in size and you want Skmer, WASTER, and
+Mash from one command.
+
+With plastid/reference removal:
+
+```bash
+skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48 \
+  --bowtie2-threads 2 \
+  --fastp-threads 4 \
+  --repair-threads 2 \
+  --bbmerge-threads 2 \
+  --total-mem-mb 180000 \
+  --bowtie2-mem-mb 6000 \
+  --printshellcmds
+```
+
+Without plastid/reference removal:
+
+```bash
+skmer-smk2 run -i /path/to/fastq_dir -s 75 -j 48 --printshellcmds
+```
+
+### Mode 2: Recommended Large-Dataset HPC Run
+
+Use this when there are many samples or when WASTER is slow or memory-heavy.
+The key idea is to run shared preprocessing first, then run Skmer, Mash, and
+WASTER as separate scheduler jobs in the same `RUN_DIR`.
+
+Export editable scripts:
+
+```bash
+skmer-smk2 init -o skmer_smk2_templates
+```
+
+Edit `FASTQ_DIR`, optional `REF_FASTA`, `RUN_DIR`, scheduler headers, and
+environment activation in these files:
+
+```text
+stage_preprocess.sh
+stage_skmer.sh
+stage_mash.sh
+stage_waster.sh
+```
+
+Then submit:
+
+```bash
+jsub < skmer_smk2_templates/stage_preprocess.sh
+jsub < skmer_smk2_templates/stage_skmer.sh
+jsub < skmer_smk2_templates/stage_mash.sh
+jsub < skmer_smk2_templates/stage_waster.sh
+```
+
+Use the same `RUN_DIR` in all four scripts so Snakemake can reuse existing
+outputs. WASTER is usually the least parallel final stage, so the WASTER script
+requests few cores but high memory.
+
+### Mode 3: Check And Repair Inputs First
+
+Use this when FASTQ files may be truncated, gzip-damaged, or have R1/R2 pairing
+problems. This is the safest mode before the main analysis.
+
 ```bash
 skmer-smk2 input-check -i RAW_FASTQ_DIR -o input_qc -j 12
 skmer-smk2 input-repair -i RAW_FASTQ_DIR -o input_qc --samples "sampleA sampleB" -j 4
@@ -12,9 +81,39 @@ skmer-smk2 run -i input_qc/input_for_skmer -ref REF_FASTA -s 75 -j 48 \
   --bowtie2-threads 2 --fastp-threads 4 --repair-threads 2 --bbmerge-threads 2
 ```
 
-The same commands can be used on a local workstation or inside HPC scheduler
-scripts. HPC does not use a different workflow; the scheduler only submits these
-commands to compute nodes.
+If no samples need repair, run the final command directly on the original
+FASTQ directory or on `input_qc/input_for_skmer/` after confirming the report.
+
+### Mode 4: Resume Or Run One Branch Only
+
+Snakemake reuses existing outputs. After an interrupted run, or when only one
+result branch is needed, use the branch flags:
+
+```bash
+skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48 -prep
+skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 16 -skmer
+skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48 -mash
+skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 1 -waster \
+  --waster-threads 1 --waster-mem-mb 220000 --total-mem-mb 240000
+```
+
+`-prep` runs only shared preprocessing and base-aware normalization. `-skmer`,
+`-mash`, and `-waster` run only the selected analysis branch. If none of these
+flags is supplied, all three analysis branches run.
+
+### Quick Decision Guide
+
+| Situation | Recommended mode |
+| --- | --- |
+| Clean moderate dataset, want all outputs | Mode 1 |
+| Many samples on HPC, want better resource use | Mode 2 |
+| FASTQ damage or uncertain input quality | Mode 3 |
+| WASTER is using one core while a large job is allocated | Mode 2 or Mode 4 `-waster` |
+| Continue after a failed or killed run | Mode 4 |
+
+The same `skmer-smk2` commands can be used on a local workstation or inside HPC
+scheduler scripts. HPC does not use a different workflow; the scheduler only
+submits these commands to compute nodes.
 
 ## What This Workflow Provides
 
