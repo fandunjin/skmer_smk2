@@ -245,6 +245,19 @@ mamba install -c conda-forge -c bioconda \
   snakemake fastp bowtie2 bbmap fastme raxml mash seqkit gzip
 ```
 
+Install Skmer, ASTER (which provides WASTER and `waster_branchlength`), and
+Jellyfish:
+
+```bash
+conda install skmer==3.3.0
+conda install aster
+sudo apt install jellyfish
+```
+
+The conda `jellyfish` package may fail to install on some systems; on
+Debian/Ubuntu, `sudo apt install jellyfish` is a working alternative. Skmer
+calls `jellyfish` internally during reference-distance estimation.
+
 ## Input FASTQ Files
 
 `-i` must point directly to the directory containing FASTQ files, not to the
@@ -465,7 +478,7 @@ skmer-smk2 run -i /path/to/fastq_dir -s 75 -j 48 -- --keep-going
 | Option | Meaning |
 | --- | --- |
 | `-i`, `--input` | Directory containing paired FASTQ files |
-| `-ref`, `--ref` | Optional reference FASTA used for Bowtie2 filtering |
+| `-ref`, `--ref` | Optional reference FASTA of sequences to remove (plastid genome, rDNA, etc.) used for Bowtie2 filtering |
 | `-s`, `--sample-percentile` | Percentile position used to choose the base-count cutoff; default `75` |
 | `--candidate-percentiles` | Percentiles included in the cutoff selection report; default `50,60,70,75,80,90,95` |
 | `-prep` | Run only shared preprocessing, filtering, merging/fallback, statistics, and `nDNAOK` outputs |
@@ -605,6 +618,9 @@ skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 \
 ```
 
 ## How `-ref` Works
+
+`REF_FASTA` is the set of sequences to be removed (for example the plastid
+genome, rDNA, or other contaminant sequences), not the sequences to be kept.
 
 When `-ref REF_FASTA` is provided:
 
