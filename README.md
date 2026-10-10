@@ -284,6 +284,55 @@ Supported FASTQ extensions:
 .fastq
 ```
 
+## Pre-Subsetting Very Large FASTQ Files With seqkit
+
+If the genome and therefore the per-sample sequencing data are very large, full
+preprocessing (fastp, optional Bowtie2 filtering, repair, BBMerge) can be slow
+and produce tens of GB of intermediate files per sample. In that case, extract
+a prefix of each raw FASTQ with `seqkit head` and run the workflow on the
+subset. Choose the number of reads to keep according to your own data volume;
+the subset only needs to be large enough for reliable Skmer k-mer distances.
+
+```bash
+reads=<reads_per_mate>    # number of reads to extract from each mate
+mkdir -p input_sub
+samples="sampleA sampleB sampleC"
+for s in $samples; do
+  for m in R1 R2; do
+    seqkit head -n "$reads" \
+      -o "input_sub/${s}_${m}.fq.gz" \
+      "/path/to/raw_fastq/${s}_${m}.fq.gz"
+  done
+done
+```
+
+Then use `input_sub` as the `-i` directory:
+
+```bash
+skmer-smk2 run -i input_sub -ref /path/to/ref.fasta -s 75 -j 48
+```
+
+Important notes:
+
+- Never truncate a `.gz` file directly with `head -c`, `head -n`, `split`, or
+  similar byte-level commands. Doing so produces an incomplete gzip stream that
+  decompresses partway and then fails with errors such as
+  `ERROR: igzip: unexpected eof` or `corrupted -- incomplete deflate data`.
+  Always use a FASTQ-aware tool such as `seqkit head` so the output is a valid
+  gzip file.
+- Apply the same `-n` to R1 and R2 so the mates stay synchronized. `seqkit head`
+  subsets by read count while the workflow's `-s` normalization subsets by
+  total bases. They do not conflict: `seqkit head` only reduces the total data
+  volume for speed and disk space, and `-s 75` still performs the final
+  base-aware normalization before Skmer/WASTER/Mash.
+- Verify the subset files before starting the workflow:
+
+```bash
+ls input_sub/*.fq.gz | xargs -P 8 -I{} bash -c \
+  'gzip -t "{}" 2>/dev/null && echo "OK  {}" || echo "BAD {}"'
+seqkit stats -T input_sub/*.fq.gz | head
+```
+
 ## Input Data Check And Repair
 
 Use two explicit steps before the main analysis: first check every input FASTQ
@@ -1078,6 +1127,19 @@ skmer-smk2 run -i /path/to/fastq_dir -ref /path/to/ref.fasta -s 75 -j 48 -waster
 If the node still kills the job, request more memory from the scheduler, reduce
 `--waster-threads` to `1`, or run only `-skmer -mash` first and run WASTER later
 in a larger-memory job. WASTER is independent of the Skmer and Mash final trees.
+
+### Truncated Or Incomplete Gzip Input
+
+If fastp fails with `ERROR: igzip: unexpected eof`, or if `gzip -t` or
+`pigz -dc` reports `unexpected end of file` / `corrupted -- incomplete deflate
+data`, the input FASTQ is an incomplete gzip stream. This commonly happens when
+`head -c`, `head -n`, or a similar byte-level command was applied directly to a
+`.gz` file, or when a download/transfer was interrupted.
+
+Re-transfer the affected files and verify them with `gzip -t`, or recreate the
+subset with `seqkit head` as described in "Pre-Subsetting Very Large FASTQ
+Files With seqkit". A truncated gzip file cannot be repaired losslessly; only
+the readable prefix can be salvaged with `pigz -dc ... | seqkit sana ...`.
 
 ### fastp Fails For One Sample
 
