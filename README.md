@@ -1055,6 +1055,28 @@ results/mash/Mash_tree.merged.tre
 
 ## Common Issues
 
+### Zero Branch Lengths After NumPy 2 Upgrade
+
+Skmer can serialize computed distances as `np.float64(0.0123)` with newer
+NumPy. Its correction stage then coerces these strings to NaN. Earlier workflow
+versions could silently convert the resulting blank cells to zero distances,
+producing all-zero branches and misleading bootstrap support. A completed DAG
+does not validate those results.
+
+Version 0.1.33 normalizes numeric NumPy scalar representations in memory before
+correction, validates input and corrected matrices, and rejects missing,
+nonfinite, asymmetric or entirely zero distance matrices during PHYLIP conversion.
+The correction formula is unchanged and raw files are not edited. Tests include
+NumPy scalar strings and blank cells, in addition to numerical correction checks.
+
+For recovery, keep raw matrices and metadata. From a downloaded/extracted source
+tree, run `python /path/to/skmer_smk2/recover_skmer.py --workdir RUN_DIR` (add
+`--replicates N` if not 100). It validates raw matrices first and archives
+downstream Skmer files, including RAxML auxiliary files, outside `results/skmer`.
+Then resume in RUN_DIR with 0.1.33 and unchanged inputs using
+`-- --rerun-incomplete --rerun-triggers mtime`. Recompute correction, PHYLIP,
+direct trees and all bootstrap trees; do not reuse earlier all-zero products.
+
 ### Skmer Correct Fails With New pandas
 
 Skmer 3.3.0 calls `DataFrame.append`, which was removed in pandas 2.0, and
