@@ -1055,6 +1055,45 @@ results/mash/Mash_tree.merged.tre
 
 ## Common Issues
 
+### Skmer Correct Fails With New pandas
+
+Skmer 3.3.0 calls `DataFrame.append`, which was removed in pandas 2.0, and
+can hide that failure as `ValueError: Please check subsample directory and try
+again`. Version 0.1.32 runs the installed Skmer correction function through a
+compatibility adapter: only that append call becomes `pd.concat`, and the real
+replicate exception is preserved. It does not edit your installed Skmer files
+or change its correction formula. Skmer must be importable by the Python
+interpreter used for workflow scripts (normally the active environment).
+
+Do not install pandas 1.5.3 into Python 3.14: that old pandas release has no
+Python 3.14 wheels. Upgrade this workflow instead:
+
+```bash
+python -m pip install --upgrade --no-deps \
+  https://github.com/fandunjin/skmer_smk2/archive/refs/heads/main.zip
+skmer-smk2 --version
+```
+
+Resume in the original work directory using the same input/configuration.
+Keep the existing `results/` directory. The workflow requires all replicate
+matrices plus `block_size.npy` and `sample_size.npy`, declares corrected
+replicate matrices as outputs, and builds bootstrap trees from
+`dimtrx_rep_cor.txt`. Complete subsamples can be reused. Missing metadata will
+cause the subsample rule to run again; do not fabricate or skip those files.
+Subsample now receives `-p` from `--skmer-threads`.
+
+After a failed job, pass `-- --rerun-incomplete` if Snakemake reports incomplete
+outputs. To preserve complete existing subsamples after an upgrade changes the
+rule's command, optionally use `-- --rerun-incomplete --rerun-triggers mtime`.
+Use this only when the input data and analysis settings are unchanged. Existing
+bootstrap products made from uncorrected matrices need regeneration.
+
+For tests (with Skmer, pandas, NumPy and SciPy installed):
+
+```bash
+python -m unittest discover -s tests -v
+```
+
 ### No Paired FASTQ Files Found
 
 Make sure `-i` points directly to the FASTQ directory and that file names use

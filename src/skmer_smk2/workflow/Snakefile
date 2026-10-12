@@ -121,6 +121,7 @@ SCRIPT_BBMERGE_OR_FALLBACK = shlex.quote(os.path.join(SCRIPT_DIR, "bbmerge_or_fa
 SCRIPT_WRITE_SAMPLE_FASTQ_LIST = shlex.quote(os.path.join(SCRIPT_DIR, "write_sample_fastq_list.py"))
 SCRIPT_MASH_DIST_TO_PHYLIP = shlex.quote(os.path.join(SCRIPT_DIR, "mash_dist_to_phylip.py"))
 SCRIPT_PLOT_MASH_HEATMAP = shlex.quote(os.path.join(SCRIPT_DIR, "plot_mash_heatmap.py"))
+SCRIPT_SKMER_CORRECT = shlex.quote(os.path.join(SCRIPT_DIR, "skmer_correct_compat.py"))
 
 if not SAMPLES:
     raise ValueError(
@@ -500,7 +501,9 @@ rule skmer_subsample:
         main="results/skmer/dimtrx_main.txt",
         skmer_dir="results/skmer_input_dir"
     output:
-        expand("results/skmer/subsample/rep{i}/dimtrx_rep.txt", i=range(rep_n))
+        matrices=expand("results/skmer/subsample/rep{i}/dimtrx_rep.txt", i=range(rep_n)),
+        blocks=expand("results/skmer/subsample/rep{i}/block_size.npy", i=range(rep_n)),
+        sizes=expand("results/skmer/subsample/rep{i}/sample_size.npy", i=range(rep_n))
     params:
         reps=rep_n,
         logdir="results/skmer/logs"
@@ -515,20 +518,26 @@ rule skmer_subsample:
         {TOOL_SKMER} subsample {input.skmer_dir} \
             -sub results/skmer/subsample \
             -b {params.reps} -i 0 \
-            -s {skmer_sketch_size} -S 42 -t > {log} 2>&1
+            -s {skmer_sketch_size} -S 42 -p {threads} -t > {log} 2>&1
         """
 
 
 rule skmer_correct:
     input:
         main="results/skmer/dimtrx_main.txt",
-        sub=expand("results/skmer/subsample/rep{i}/dimtrx_rep.txt", i=range(rep_n))
+        sub=expand("results/skmer/subsample/rep{i}/dimtrx_rep.txt", i=range(rep_n)),
+        blocks=expand("results/skmer/subsample/rep{i}/block_size.npy", i=range(rep_n)),
+        sizes=expand("results/skmer/subsample/rep{i}/sample_size.npy", i=range(rep_n))
     output:
-        "results/skmer/dimtrx_main_cor_.txt"
+        main="results/skmer/dimtrx_main_cor_.txt",
+        reps=expand("results/skmer/subsample/rep{i}/dimtrx_rep_cor.txt", i=range(rep_n))
+    params:
+        reps=rep_n
     log:
         "results/skmer/logs/correct.log"
     shell:
-        "{TOOL_SKMER} correct -main {input.main} -sub results/skmer/subsample > {log} 2>&1"
+        "{TOOL_PYTHON} {SCRIPT_SKMER_CORRECT} --main {input.main:q} "
+        "--sub results/skmer/subsample --replicates {params.reps} > {log:q} 2>&1"
 
 
 rule skmer_main_to_phylip:
@@ -553,7 +562,7 @@ rule skmer_fastme_direct:
 
 rule skmer_rep_to_phylip:
     input:
-        txt="results/skmer/subsample/rep{idx}/dimtrx_rep.txt",
+        txt="results/skmer/subsample/rep{idx}/dimtrx_rep_cor.txt",
         wait_for_correct="results/skmer/dimtrx_main_cor_.txt"
     output:
         "results/skmer/subsample/rep{idx}/dimtrx_rep.phy"
